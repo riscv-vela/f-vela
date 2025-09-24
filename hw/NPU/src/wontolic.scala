@@ -8,9 +8,11 @@ import gemmini.Util._
 class WontolicReq[T <: Data: Arithmetic, TagT <: TagQueueTag with Data](tagType: TagT, ma_length: Int) extends Bundle {
   val in_prop = Bool()
   val in_acc = Bool()
+  val in_preload = Bool()
   val total_rows = UInt(log2Up(ma_length+1).W)
   val tag = tagType
   val flush = UInt(2.W)
+  val b_transpose = Bool()
 }
 
 class WontolicResp[T <: Data: Arithmetic, TagT <: TagQueueTag with Data](outputType: T, ma_length: Int, ma_num: Int, tagType: TagT) extends Bundle {
@@ -26,6 +28,7 @@ class Wontolic[T <: Data](inputType: T, outputType: T, ma_length: Int, ma_num: I
     val io = IO(new Bundle {
         val in_a = Input(Vec(ma_length, inputType))
         val in_b = Input(Vec(ma_num, inputType))
+        val in_b_vec = Input(Vec(ma_length, inputType)) // B_Transpose 일 때 사용하는 io
         val in_d = Input(Vec(ma_num, inputType))
 
         val in_last = Input(Vec(ma_length, Bool()))
@@ -33,14 +36,14 @@ class Wontolic[T <: Data](inputType: T, outputType: T, ma_length: Int, ma_num: I
         val in_valid = Input(Vec(ma_length, Bool()))
         val in_id = Input(Vec(ma_length, UInt(log2Up(max_simultaneous_matmuls).W)))
         val in_fire_counter = Input(UInt(log2Up(ma_length).W))
-        val in_b_fire = Input(Bool())
         val in_acc = Input(Bool())
+        val in_preload = Input(Bool())
+        val in_b_transpose = Input(Bool())
 
         val out_c = Output(Vec(ma_num, outputType))
         val out_last = Output(Vec(ma_num, Bool()))
         val out_id = Output(Vec(ma_num, UInt(log2Up(max_simultaneous_matmuls).W)))
         val out_valid = Output(Vec(ma_num, Bool()))
-        val out_prop = Output(Vec(ma_num, Bool()))
     })
 
     val buffadderarray = Seq.fill(ma_num) {
@@ -69,17 +72,28 @@ class Wontolic[T <: Data](inputType: T, outputType: T, ma_length: Int, ma_num: I
         mularraybundle(i).io.in_a := VecInit(buffvectorarray.map(_.io.out_a))
         //io.in_b의 i번째 element를 i번째 mularray에 입력(transpose를 안하기 위해)
         mularraybundle(i).io.in_b := io.in_b(i)
+        // Create a condition that is true only for the selected mularray
+        val is_selected_for_transpose = io.in_b_transpose && (io.in_fire_counter === i.U)
+        val b_fire = RegNext(io.in_valid.reduce(_||_))
+        // Use a Mux to provide the vector data only to the selected mularray.
+        // Others get a zero vector. 0.U.asTypeOf(...) creates a wire of the correct type with all bits set to 0.
+        mularraybundle(i).io.in_b_vec := Mux(is_selected_for_transpose, io.in_b_vec, 0.U.asTypeOf(io.in_b_vec))
+
+        // The fire signal should also only go to the selected mularray in transpose mode.
+        // In non-transpose mode, it is broadcast to all.
+        mularraybundle(i).io.in_b_fire := Mux(io.in_b_transpose, Mux(is_selected_for_transpose, b_fire, false.B), b_fire)
+        
         mularraybundle(i).io.in_fire_counter := io.in_fire_counter
         //in_valid, in_last 등의 신호 입력
         mularraybundle(i).io.in_valid :=  VecInit(buffvectorarray.map(_.io.out_valid))
         mularraybundle(i).io.in_last :=  VecInit(buffvectorarray.map(_.io.out_last))
         mularraybundle(i).io.in_id :=  VecInit(buffvectorarray.map(_.io.out_id))
         mularraybundle(i).io.in_prop :=  VecInit(buffvectorarray.map(_.io.out_prop))
-        mularraybundle(i).io.in_valid_b := io.in_valid
-        mularraybundle(i).io.in_b_fire := io.in_b_fire
+        mularraybundle(i).io.in_b_transpose := io.in_b_transpose
     }
     
-
+    val in_acc_next = ShiftRegister(io.in_acc, 2)
+    val in_preload_next = ShiftRegister(io.in_preload, 2)
 
     //adder tree의 결과 값을 buffadderarray의 입력으로 연결 + buffadderarray에 in_d 연결
     for(i <- 0 until ma_num) {
@@ -88,15 +102,14 @@ class Wontolic[T <: Data](inputType: T, outputType: T, ma_length: Int, ma_num: I
         buffadderarray(i).io.in_valid := mularraybundle(i).io.out_valid
         buffadderarray(i).io.in_last := mularraybundle(i).io.out_last
         buffadderarray(i).io.in_id := mularraybundle(i).io.out_id
-        buffadderarray(i).io.in_prop := mularraybundle(i).io.out_prop
 
-        buffadderarray(i).io.in_acc := io.in_acc
+        buffadderarray(i).io.in_acc := in_acc_next
+        buffadderarray(i).io.in_preload := in_preload_next
 
         io.out_c(i) := buffadderarray(i).io.out_c
         io.out_valid(i) := buffadderarray(i).io.out_valid
         io.out_last(i) := buffadderarray(i).io.out_last
         io.out_id(i) := buffadderarray(i).io.out_id
-        io.out_prop(i) := buffadderarray(i).io.out_prop
     }
 
 }
@@ -112,8 +125,10 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     val ma_length = meshColumns
     val ma_num = meshRows
 
+    val B_MAX_SIZE = scala.math.max(ma_length, ma_num)
+
     val A_TYPE = Vec(ma_length, inputType)
-    val B_TYPE = Vec(ma_num, inputType)
+    val B_TYPE = Vec(B_MAX_SIZE, inputType)
     val C_TYPE = Vec(ma_num, inputType)
     val D_TYPE = Vec(ma_num, inputType)
 
@@ -134,10 +149,10 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     })
 
      //입력된 req 저장해놓음.pop을 통해 가져오면 valid false됨.push하면 valid true TODO: argument 수정할 것
-    val req = Reg(UDValid(new WontolicReq( tagType, ma_length)))
+    val req = RegInit(0.U.asTypeOf(UDValid(new WontolicReq(tagType, ma_length))))
 
     //PE의 double buffering control logic
-    val in_prop = Reg(Bool())
+    val in_prop = RegInit(false.B)
     val total_fires = req.bits.total_rows
     val fire_counter = RegInit(0.U(log2Up(ma_length).W))
 
@@ -192,19 +207,22 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     val wontolic = Module(new Wontolic(inputType, outputType, ma_length, ma_num, max_simultaneous_matmuls))
 
     val a_buf = RegEnable(io.a.bits, io.a.fire)   // fire 때만 io.a.bits → a_buf
-    val b_buf = RegEnable(io.b.bits, io.b.fire)   // (Decoupled ⇒ ready & valid)
+    val b_buf_0 = RegEnable(io.b.bits, io.b.fire)   // (Decoupled ⇒ ready & valid)
+    val b_buf = RegNext(b_buf_0) 
     val d_buf = RegEnable(io.d.bits, io.d.fire)
 
 
     wontolic.io.in_a := a_buf
     wontolic.io.in_b := b_buf
+    wontolic.io.in_b_vec := b_buf
     wontolic.io.in_d := d_buf
 
-    wontolic.io.in_b_fire := RegNext(io.b.fire)
     wontolic.io.in_acc := io.req.bits.in_acc
+    wontolic.io.in_preload := io.req.bits.in_preload
 
     wontolic.io.in_prop.foreach(_ := in_prop)
 
+    wontolic.io.in_b_transpose := req.bits.b_transpose
 
     val out_matmul_id: UInt = wontolic.io.out_id.reduce(_ | _)
 
@@ -245,15 +263,14 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     io.b.ready := !b_written || input_next_row_into_spatial_array || io.req.ready
     io.d.ready := !d_written || input_next_row_into_spatial_array || io.req.ready
 
-    wontolic.io.in_fire_counter := fire_counter
+    wontolic.io.in_fire_counter := RegNext(fire_counter)
 
     //pause 로 valid신호 만들어서 wontolic의 각 pe에 전파
     val pause = !req.valid || !input_next_row_into_spatial_array
-    val not_paused_vec = VecInit(Seq.fill(ma_num)(!pause))
+    val not_paused_vec = VecInit(Seq.fill(ma_length)(!pause))
     wontolic.io.in_valid := not_paused_vec
 
-
-    val matmul_last_vec = VecInit(Seq.fill(ma_num)(last_fire))
+    val matmul_last_vec = VecInit(Seq.fill(ma_length)(last_fire))
     wontolic.io.in_last := matmul_last_vec
 
     val matmul_id_vec = VecInit(Seq.fill(meshColumns)(matmul_id))

@@ -339,8 +339,8 @@ class LoopMatmulExecuteReq(val block_size: Int, val coreMaxAddrBits: Int, val it
   val pad_j = UInt(log2Up(block_size).W)
   val pad_k = UInt(log2Up(block_size).W)
   val pad_i = UInt(log2Up(block_size).W)
-  val a_tranpose = Bool()
-  val b_tranpose = Bool()
+  val a_transpose = Bool()
+  val b_transpose = Bool()
   val accumulate = Bool()
   val a_addr_start = UInt(log2Up(max_addr).W)
   val b_addr_end = UInt(log2Up(max_addr+1).W)
@@ -390,13 +390,13 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   val j = Reg(UInt(iterator_bitwidth.W))
   val i = Reg(UInt(iterator_bitwidth.W))
 
-  val a_row = Mux(req.a_tranpose, k, i)
-  val a_col = Mux(req.a_tranpose, i, k)
-  val b_row = Mux(req.b_tranpose, j, k)
-  val b_col = Mux(req.b_tranpose, k, j)
+  val a_row = Mux(req.a_transpose, k, i)
+  val a_col = Mux(req.a_transpose, i, k)
+  val b_row = Mux(req.b_transpose, j, k)
+  val b_col = Mux(req.b_transpose, k, j)
 
-  val a_max_col = Mux(req.a_tranpose, req.max_i, req.max_k)
-  val b_max_col = Mux(req.b_tranpose, req.max_k, req.max_j)
+  val a_max_col = Mux(req.a_transpose, req.max_i, req.max_k)
+  val b_max_col = Mux(req.b_transpose, req.max_k, req.max_j)
 
   val a_addr = req.a_addr_start + (a_row * a_max_col + a_col) * block_size.U
   val b_addr = b_addr_start + (b_row * b_max_col + b_col) * block_size.U
@@ -491,7 +491,7 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
     i := 0.U
   }
 
-  assert(!(state =/= idle && req.a_tranpose && req.b_tranpose))
+  assert(!(state =/= idle && req.a_transpose && req.b_transpose))
 }
 
 // StC
@@ -1007,8 +1007,8 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ex.io.req.bits.accumulate := loop_requesting_ex.ex_accumulate
   ex.io.req.bits.a_addr_start := Mux(loop_requesting_ex.a_ex_spad_id === 0.U, loop_requesting_ex.a_addr_start, (loop_requesting_ex.a_ex_spad_id - 1.U) * (max_addr / concurrent_loops).U)
   ex.io.req.bits.b_addr_end := Mux(loop_requesting_ex.b_ex_spad_id === 0.U, loop_requesting_ex.b_addr_end, (loop_requesting_ex.b_ex_spad_id) * (max_addr / concurrent_loops).U) 
-  ex.io.req.bits.a_tranpose := loop_requesting_ex.a_transpose
-  ex.io.req.bits.b_tranpose := loop_requesting_ex.b_transpose
+  ex.io.req.bits.a_transpose := loop_requesting_ex.a_transpose
+  ex.io.req.bits.b_transpose := loop_requesting_ex.b_transpose
   ex.io.req.bits.c_addr_start := ex_c_addr_start
   ex.io.req.bits.loop_id := loop_requesting_ex_id
   ex.io.req.bits.skip := is_resadd

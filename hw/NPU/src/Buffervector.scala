@@ -23,26 +23,25 @@ class Buffvector[T <: Data : Arithmetic](inputType: T, max_simultaneous_matmuls:
         val out_prop = Output(Bool())
     })
 
-    val c1 = Reg(inputType)
-    val c2 = Reg(inputType)
+    val c1 = RegInit(0.U.asTypeOf(inputType))
+    val c2 = RegInit(0.U.asTypeOf(inputType))
 
     //internal control signal for double buffering
-    val in_prop = RegInit(false.B)
-    in_prop := Mux(io.in_valid, ~in_prop, in_prop)
-
-    when(in_prop) {
-        c1 := io.in_a
+    val toggle = RegInit(false.B)
+    
+    when(toggle) {
+        when(io.in_valid) { c1 := io.in_a }
         io.out_a := c2
     }
     .otherwise {
-        c2 := io.in_a
+        when(io.in_valid) { c2 := io.in_a }
         io.out_a := c1
     }
-
-    when(!io.in_valid) {
-        c1 := c1
-        c2 := c2
-        in_prop := false.B          // 토글 상태 리셋
+    
+    when (io.in_valid){
+        toggle := ~toggle
+    }   .otherwise{
+        toggle := toggle
     }
 
     def pipe[T <: Data](valid: Bool, t: T, latency: Int): T = {
@@ -51,11 +50,10 @@ class Buffvector[T <: Data : Arithmetic](inputType: T, max_simultaneous_matmuls:
         chisel3.withReset(false.B) { Pipe(valid, t, latency).bits }
     }
 
-    io.out_valid := ShiftRegister(io.in_valid, 1)
+    io.out_valid := RegNext(io.in_valid)
     io.out_last := pipe(io.in_valid, io.in_last, 1)
     io.out_id := pipe(io.in_valid, io.in_id, 1)
-    io.out_prop := io.in_prop
-    
+    io.out_prop := RegNext(io.in_prop)
 
 
     

@@ -53,10 +53,6 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     }
   }
 
-
-  //b_transpose할 경우 preload + compute_and_flip을 3단계의 명령어로 분할-> 할 경우 없으므로 우선 제거
-  // val unrolled_cmd = TransposePreloadUnroller(io.cmd, config, io.counter)
-
   val cmd_q_heads = 3
   assert(ex_queue_length >= cmd_q_heads)  
   val (cmd, _) = MultiHeadedQueue(io.cmd, ex_queue_length, cmd_q_heads)
@@ -75,21 +71,12 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val DoComputes = functs.map(f => f === COMPUTE_AND_FLIP_CMD || f === COMPUTE_AND_STAY_CMD)
   val DoPreloads = functs.map(_ === PRELOAD_CMD)
 
-  val in_acc = rs1s(0)(rs1s(0).getWidth - 1)
-  val in_prop = functs(0) === COMPUTE_AND_FLIP_CMD
-
-  val in_acc_buf = RegInit(false.B)
-  val cmd_pop_next = RegNext(cmd.pop =/= 0.U)
-  when(cmd_pop_next && DoComputes(0)){
-    in_acc_buf := in_acc
-  }
-  val in_acc_delay = ShiftRegister(in_acc_buf, spad_read_delay+1)
-
-  val in_prop_flush = Reg(Bool())
+  val in_prop_flush = RegInit(false.B)
   in_prop_flush := false.B
 
   val acc_scale = Reg(acc_scale_t)
   val activation = if (has_nonlinear_activations) Reg(UInt(Activation.bitwidth.W)) else Activation.NONE // TODO magic number
+  val b_transpose = RegInit(false.B)
   val config_initialized = RegInit(false.B)
 
   val bc_address_place = Mux(DoPreloads(0), 0.U, 1.U)
@@ -110,8 +97,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   val a_cols = rs1s(ad_address_place)(32 + log2Up(block_size + 1) - 1, 32)
   val a_rows = rs1s(ad_address_place)(48 + log2Up(block_size + 1) - 1, 48)
-  val b_cols = rs1s(bc_address_place)(32 + log2Up(block_size + 1) - 1, 32)
-  val b_rows = rs1s(bc_address_place)(48 + log2Up(block_size + 1) - 1, 48)
+  val b_cols_default = rs1s(bc_address_place)(32 + log2Up(block_size + 1) - 1, 32)
+  val b_rows_default = rs1s(bc_address_place)(48 + log2Up(block_size + 1) - 1, 48)
+  val b_cols = Mux(b_transpose, b_rows_default, b_cols_default)
+  val b_rows = Mux(b_transpose, b_cols_default, b_rows_default)
   val d_cols = rs2s(ad_address_place)(32 + log2Up(block_size + 1) - 1, 32)
   val d_rows = rs2s(ad_address_place)(48 + log2Up(block_size + 1) - 1, 48)
   val c_cols = rs2s(bc_address_place)(32 + log2Up(block_size + 1) - 1, 32)
@@ -151,8 +140,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   wontolic.io.req.bits.flush := Mux(control_state === flush && !cntl_valid, 1.U, 0.U) // We want to make sure that the mesh has absorbed all inputs before flushing
   wontolic.io.req.bits.tag.rob_id := cntl.rob_id
   wontolic.io.req.bits.in_prop := Mux(control_state === flush, in_prop_flush, cntl.prop)
-  wontolic.io.req.bits.in_acc := in_acc_delay
-
+  wontolic.io.req.bits.b_transpose := cntl.b_transpose
+  wontolic.io.req.bits.in_acc := cntl.in_acc
+  wontolic.io.req.bits.in_preload := cntl.in_preload
 //Hazards
   val raw_hazards_are_impossible = !ex_read_from_acc && !ex_write_to_spad // Special case where RAW hazards are impossible
 
@@ -179,9 +169,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   io.busy := cmd.valid(0) || matmul_in_progress
 
-  val a_fire_counter = Reg(UInt(log2Up(block_size).W))
-  val b_fire_counter = Reg(UInt(log2Up(block_size).W))
-  val d_fire_counter = Reg(UInt(log2Up(block_size).W))
+  val a_fire_counter = RegInit(0.U(log2Up(block_size).W))
+  val b_fire_counter = RegInit(0.U(log2Up(block_size).W))
+  val d_fire_counter = RegInit(0.U(log2Up(block_size).W))
 
   val a_fire_started = RegInit(false.B)
   val b_fire_started = RegInit(false.B)
@@ -226,6 +216,23 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val performing_mul_pre = WireInit(perform_mul_pre && control_state === compute)
 
   val total_rows = WireInit(block_size.U)
+
+  val in_acc = (rs1s(0)(rs1s(0).getWidth - 1)).asBool
+  val in_prop = functs(0) === COMPUTE_AND_FLIP_CMD
+
+  val in_acc_buf = RegInit(false.B)
+  val in_preload = RegInit(false.B)
+
+  val cmd_pop_next = RegNext(cmd.pop =/= 0.U)
+  when(cmd_pop_next && DoComputes(0)){
+    in_acc_buf := in_acc
+  }
+  when(DoPreloads(0)){
+    in_preload := true.B
+  } .otherwise {
+    in_preload := false.B
+  }
+
 
   // TODO Also reduce the number of rows when "perform_single_preload === true.B"
   when (b_garbage) {
@@ -448,9 +455,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
               //WS에서는 기본적으로 shift 안쓰임(OS에서 값을 축적할 때, 정밀도 손실을 줄이기 위해 사용되는 것으로 추정)
               //in_shift := config_ex_rs2.in_shift
               acc_scale := rs1s(0)(xLen - 1, 32).asTypeOf(acc_scale_t) // TODO magic number
-              //Transpose 기능 삭제
+              //A_Transpose 기능 삭제
               //a_transpose := config_ex_rs1.a_transpose
-              //bd_transpose := config_ex_rs1.b_transpose
+              b_transpose := config_ex_rs1.b_transpose
               /* dataflow도 ws만 지원
               if (dataflow == Dataflow.BOTH) {
                 current_dataflow := config_ex_rs1.dataflow
@@ -616,6 +623,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     val prop = UInt(1.W)
 
     val first = Bool()
+    val b_transpose = Bool()
+    val in_acc = Bool()
+    val in_preload = Bool()
   }
 
   mesh_cntl_signals_q.io.enq.valid := computing
@@ -664,6 +674,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   mesh_cntl_signals_q.io.enq.bits.prop := Mux(performing_single_preload, in_prop_flush, in_prop)//prop) //available propagate or not?
 
   mesh_cntl_signals_q.io.enq.bits.first := !a_fire_started && !b_fire_started && !d_fire_started
+  mesh_cntl_signals_q.io.enq.bits.b_transpose := b_transpose
+  mesh_cntl_signals_q.io.enq.bits.in_acc := in_acc_buf
+  mesh_cntl_signals_q.io.enq.bits.in_preload := in_preload
+
 
   val readData = VecInit(io.srams.read.map(_.resp.bits.data))
   val accReadData = if (ex_read_from_acc) VecInit(io.acc.read_resp.map(_.bits.data.asUInt)) else readData
@@ -739,24 +753,23 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     wontolic.io.d.valid := cntl.d_fire && dataD_valid
 
     wontolic.io.a.bits := dataA.asTypeOf(Vec(meshColumns, inputType))
-    wontolic.io.b.bits := dataB.asTypeOf(Vec(meshRows, inputType))
+    wontolic.io.b.bits := Mux(cntl.b_transpose, dataB.asTypeOf(Vec(meshColumns, inputType)), dataB.asTypeOf(Vec(meshRows, inputType)))
     wontolic.io.d.bits := dataD.asTypeOf(Vec(meshRows, inputType))
 
     wontolic.io.req.valid := mesh_cntl_signals_q.io.deq.fire && (cntl.a_fire || cntl.b_fire || cntl.d_fire)
 
     wontolic.io.req.bits.tag.addr := cntl.c_addr
-
     wontolic.io.req.bits.total_rows := cntl.total_rows
   }
 
   when (cntl_valid && cntl.perform_single_preload) {
     wontolic.io.a.bits := 0.U.asTypeOf(Vec(meshColumns, inputType))
-    wontolic.io.b.bits := dataB.asUInt.asTypeOf(Vec(meshRows, inputType))
+    wontolic.io.b.bits := Mux(cntl.b_transpose, dataB.asTypeOf(Vec(meshColumns, inputType)), dataB.asTypeOf(Vec(meshRows, inputType)))
   }
 
   when (cntl_valid && cntl.perform_single_mul) {
     wontolic.io.a.bits := dataA.asUInt.asTypeOf(Vec(meshColumns, inputType))
-    wontolic.io.b.bits := 0.U.asTypeOf(Vec(meshRows, inputType))
+    wontolic.io.b.bits := Mux(cntl.b_transpose, 0.U.asTypeOf(Vec(meshColumns, inputType)), 0.U.asTypeOf(Vec(meshRows, inputType)))
     wontolic.io.req.bits.tag.addr.make_this_garbage()
   }
 

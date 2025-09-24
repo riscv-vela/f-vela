@@ -12,13 +12,11 @@ class AdderTree[T <: Data : Arithmetic](outputType: T, ma_length: Int, max_simul
         val in_last = Input(Vec(ma_length, Bool()))
         val in_valid = Input(Vec(ma_length, Bool()))
         val in_id = Input(Vec(ma_length, UInt(log2Up(max_simultaneous_matmuls).W)))
-        val in_prop = Input(Vec(ma_length, Bool()))
 
         val out = Output(outputType)
         val out_last = Output(Bool())
         val out_valid = Output(Bool())
         val out_id = Output( UInt(log2Up(max_simultaneous_matmuls).W))
-        val out_prop = Output(Bool())
     })
 
     def treeAdd(n: Seq[T]): T = {
@@ -38,7 +36,6 @@ class AdderTree[T <: Data : Arithmetic](outputType: T, ma_length: Int, max_simul
     io.out_valid := io.in_valid.reduce(_||_)
     io.out_last := io.in_last.reduce(_||_)
     io.out_id := io.in_id.head
-    io.out_prop := io.in_prop.reduce(_||_)
 
 }
 
@@ -48,21 +45,20 @@ class Mularray[T <: Data](inputType: T, outputType: T, ma_length: Int, max_simul
     val io = IO(new Bundle {
         val in_a = Input(Vec(ma_length, inputType))
         val in_b = Input(inputType)
-         
+        val in_b_vec = Input(Vec(ma_length, inputType))
 
         val in_last = Input(Vec(ma_length, Bool()))
         val in_valid = Input(Vec(ma_length, Bool()))
         val in_id = Input(Vec(ma_length, UInt(log2Up(max_simultaneous_matmuls).W)))
         val in_prop = Input(Vec(ma_length, Bool()))
         val in_fire_counter = Input(UInt(log2Up(ma_length).W))
-        val in_valid_b = Input(Vec(ma_length, Bool()))
         val in_b_fire = Input(Bool())
+        val in_b_transpose = Input(Bool())
 
         val out_sum = Output(outputType)
         val out_last = Output(Bool())
         val out_valid = Output(Bool())
         val out_id = Output( UInt(log2Up(max_simultaneous_matmuls).W))
-        val out_prop = Output(Bool())
     })
 
     val adderTree = Module(new AdderTree(outputType, ma_length, max_simultaneous_matmuls))
@@ -76,15 +72,24 @@ class Mularray[T <: Data](inputType: T, outputType: T, ma_length: Int, max_simul
         pe.io.in_last := io.in_last(i)
         pe.io.in_id := io.in_id(i)
         pe.io.in_prop := io.in_prop(i)
-        pe.io.in_valid_b := io.in_valid_b(i)
     }
 
     // 선택된 PE 만 진짜 입력 연결
 
     for ((pe, idx) <- pe_array.zipWithIndex) {
+        // in_fire_counter에 의해 선택된 PE만 유효한 값을 받음
         val sel = io.in_fire_counter === idx.U
-        pe.io.in_b      := Mux(sel, io.in_b,      0.U.asTypeOf(inputType))
-        pe.io.in_b_fire := Mux(sel, io.in_b_fire, false.B)
+        val b_scalar_val = Mux(sel, io.in_b, 0.U.asTypeOf(inputType))
+        val b_fire_scalar = Mux(sel, io.in_b_fire, false.B)
+
+        // --- b_transpose가 true일 때의 로직 (새로 추가) ---
+        // 모든 PE가 벡터의 각 요소를 동시에 받음
+        val b_vector_val = io.in_b_vec(idx)
+        val b_fire_vector = io.in_b_fire
+
+        // io.in_b_transpose 값에 따라 두 로직 중 하나를 선택하여 PE에 연결
+        pe.io.in_b      := Mux(io.in_b_transpose, b_vector_val, b_scalar_val)
+        pe.io.in_b_fire := Mux(io.in_b_transpose, b_fire_vector, b_fire_scalar)
     }
 
     //각 pe의 결과 값을 adderTree의 입력으로 연결
@@ -92,7 +97,6 @@ class Mularray[T <: Data](inputType: T, outputType: T, ma_length: Int, max_simul
     adderTree.io.in_valid := VecInit(pe_array.map(_.io.out_valid))
     adderTree.io.in_last := VecInit(pe_array.map(_.io.out_last))
     adderTree.io.in_id := VecInit(pe_array.map(_.io.out_id))
-    adderTree.io.in_prop := VecInit(pe_array.map(_.io.out_prop))
 
 
     //adder Tree 결과값 연결
@@ -100,7 +104,6 @@ class Mularray[T <: Data](inputType: T, outputType: T, ma_length: Int, max_simul
     io.out_valid := adderTree.io.out_valid
     io.out_last := adderTree.io.out_last
     io.out_id := adderTree.io.out_id
-    io.out_prop := adderTree.io.out_prop
 
 }
 

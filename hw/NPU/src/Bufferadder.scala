@@ -15,47 +15,64 @@ class Buffadder[T <: Data : Arithmetic](inputType: T, outputType: T, max_simulta
         val in_last = Input(Bool())
         val in_valid = Input(Bool())
         val in_id = Input(UInt(log2Up(max_simultaneous_matmuls).W))
-        val in_prop = Input(Bool())
         val in_acc = Input(Bool())
+        val in_preload = Input(Bool())
 
         val out_last = Output(Bool())
         val out_valid = Output(Bool())
         val out_id = Output(UInt(log2Up(max_simultaneous_matmuls).W))
-        val out_prop = Output(Bool())
     })
 
     val in_d_ext = io.in_d.withWidthOf(outputType)
-    val c1 = Reg(outputType)
-    val c2 = Reg(outputType)
-    val c3 = Reg(outputType)
+    val c1 = RegInit(0.U.asTypeOf(outputType))
+    val c2 = RegInit(0.U.asTypeOf(outputType))
+    val c3 = RegInit(0.U.asTypeOf(outputType))
 
     //internal control signal for double buffering
-    val in_d_ext_next = RegNext(in_d_ext)
-
-    val in_acc_next = ShiftRegister(io.in_acc, 2)
+    val in_d_ext_next = RegNext(in_d_ext, 0.U.asTypeOf(outputType))
+    val in_valid_next = RegNext(io.in_valid)
     
-    val in_prop = RegInit(false.B)
-    in_prop := Mux(io.in_valid, ~in_prop, in_prop)
+    val toggle_reg = RegInit(false.B)
+    val toggle = Wire(Bool())
+    toggle := false.B
 
-    when (io.in_valid &&  in_prop) { c1 := in_d_ext_next }
-    when (io.in_valid && !in_prop) { c2 := in_d_ext_next }
+    when(in_valid_next) {
+        toggle := ~toggle_reg
+        toggle_reg := toggle
+    }
+    
+    when(toggle) {
+        c1 := in_d_ext_next
+    }.otherwise {
+        c2 := in_d_ext_next
+    }
 
 
     io.out_c := 0.U.asTypeOf(outputType)
-    // ────────── 누적 / 출력 로직 ──────────
-    val base_d   = Mux(in_prop, c2, c1)      // 현재 싸이클에 더할 D
-    val sum_temp = base_d + io.in_result     // PE 결과 + D
 
-    when (in_acc_next && io.in_valid) {              // 누적 단계
-        c3         := c3 + sum_temp
-    } .elsewhen(!in_acc_next && io.in_valid) {               // 출력 단계
-        io.out_c     := sum_temp + c3
-        c3           := 0.U.asTypeOf(outputType) // 다음 누적을 위해 클리어
+    // ────────── 누적 / 출력 로직 ──────────
+    val base_d   = Mux(toggle, c2, c1)      // 현재 싸이클에 더할 D
+    val c3_next = c3 + io.in_result
+
+
+    when(in_valid_next){
+        when(io.in_acc){
+            c3 := c3_next                       // 누적 단계
+        } .elsewhen(io.in_preload){
+            c3 := c3
+        }.otherwise {
+            io.out_c := c3_next + base_d        // 출력 단계
+            c3 := 0.U.asTypeOf(outputType)      // 다음 누적을 위해 클리어
+        }
+    }
+    def pipe[T <: Data](valid: Bool, t: T, latency: Int): T = {
+        // The default "Pipe" function apparently resets the valid signals to false.B. We would like to avoid using global
+        // signals in the Mesh, so over here, we make it clear that the reset signal will never be asserted
+        chisel3.withReset(false.B) { Pipe(valid, t, latency).bits }
     }
 
-    io.out_valid := io.in_valid
-    io.out_last := io.in_last
-    io.out_id := io.in_id
-    io.out_prop := io.in_prop
+    io.out_valid := in_valid_next
+    io.out_last := pipe(io.in_valid, io.in_last, 1)
+    io.out_id := pipe(io.in_valid, io.in_id, 1)
 
 }

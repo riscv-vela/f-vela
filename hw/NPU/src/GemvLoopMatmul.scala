@@ -45,8 +45,8 @@ class GemvLoopMatmulLdA(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
 
   val req = Reg(new GemvLoopMatmulLdAReq(block_size, coreMaxAddrBits, iterator_bitwidth, max_addr, concurrent_loops))
 
-  val i = Reg(UInt(iterator_bitwidth.W))
-  val k = Reg(UInt(iterator_bitwidth.W))
+  val i = RegInit(0.U(iterator_bitwidth.W))
+  val k = RegInit(0.U(iterator_bitwidth.W))
 
   val row_iterator = Mux(req.transpose, k, i)
   val col_iterator = Mux(req.transpose, i, k)
@@ -160,8 +160,8 @@ class GemvLoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
 
   val req = Reg(new GemvLoopMatmulLdBReq(block_size, coreMaxAddrBits, iterator_bitwidth, max_addr, concurrent_loops))
 
-  val k = Reg(UInt(iterator_bitwidth.W))
-  val j = Reg(UInt(iterator_bitwidth.W))
+  val k = RegInit(0.U(iterator_bitwidth.W))
+  val j = RegInit(0.U(iterator_bitwidth.W))
 
   val row_iterator = Mux(req.transpose, j, k)
   val col_iterator = Mux(req.transpose, k, j)
@@ -171,8 +171,8 @@ class GemvLoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
 
   val row_pad = Mux(req.transpose, req.pad_j, req.pad_k)
   val col_pad = Mux(req.transpose, req.pad_k, req.pad_j)
-  //TODO : 수정필요
-  val max_col_dim = Mux(req.transpose, req.max_k, req.max_j)
+  
+  val max_col_dim = Mux(req.transpose, req.max_j, req.max_k)
   val max_blocks = Mux(max_col_dim <= max_block_len.U, max_col_dim, max_block_len.U)
 
   val sp_addr_start = req.addr_start
@@ -286,8 +286,8 @@ class GemvLoopMatmulLdD(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   val max_blocks = Mux(req.low_d, Mux(req.max_j <= max_block_len.U, req.max_j, max_block_len.U),
     Mux(req.max_j <= max_block_len_acc.U, req.max_j, max_block_len_acc.U))
 
-  val j = Reg(UInt(iterator_bitwidth.W))
-  val i = Reg(UInt(iterator_bitwidth.W))
+  val j = RegInit(0.U(iterator_bitwidth.W))
+  val i = RegInit(0.U(iterator_bitwidth.W))
 
   val acc_addr_start = req.addr_start
 
@@ -354,8 +354,8 @@ class GemvLoopMatmulExecuteReq(val block_size: Int, val coreMaxAddrBits: Int, va
   val pad_j = UInt(log2Up(block_size).W)
   val pad_k = UInt(log2Up(block_size).W)
   val pad_i = UInt(log2Up(block_size).W)
-  val a_tranpose = Bool()
-  val b_tranpose = Bool()
+  val a_transpose = Bool()
+  val b_transpose = Bool()
   val accumulate = Bool()
   val a_addr_start = UInt(log2Up(max_addr).W)
   val b_addr_start = UInt(log2Up(max_addr+1).W)
@@ -402,17 +402,17 @@ class GemvLoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitw
   val c_addr_start = /*(BigInt(1) << 31).U |*/ req.c_addr_start
   val b_addr_start = req.b_addr_start
 
-  val k = Reg(UInt(iterator_bitwidth.W))
-  val i = Reg(UInt(iterator_bitwidth.W))
-  val j = Reg(UInt(iterator_bitwidth.W))
+  val k = RegInit(0.U(iterator_bitwidth.W))
+  val i = RegInit(0.U(iterator_bitwidth.W))
+  val j = RegInit(0.U(iterator_bitwidth.W))
 
-  val a_row = Mux(req.a_tranpose, k, i)
-  val a_col = Mux(req.a_tranpose, i, k)
-  val b_row = Mux(req.b_tranpose, j, k)
-  val b_col = Mux(req.b_tranpose, k, j)
+  val a_row = Mux(req.a_transpose, k, i)
+  val a_col = Mux(req.a_transpose, i, k)
+  val b_row = Mux(req.b_transpose, j, k)
+  val b_col = Mux(req.b_transpose, k, j)
 
-  val a_max_col = Mux(req.a_tranpose, req.max_i, req.max_k)
-  val b_max_row = Mux(req.b_tranpose, req.max_j, req.max_k)
+  val a_max_col = Mux(req.a_transpose, req.max_i, req.max_k)
+  val b_max_row = Mux(req.b_transpose, req.max_j, req.max_k)
 
   val a_addr = req.a_addr_start + (a_row * a_max_col + a_col) * block_size.U
 
@@ -527,7 +527,7 @@ class GemvLoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitw
     i := 0.U
   }
 
-  assert(!(state =/= idle && req.a_tranpose && req.b_tranpose))
+  assert(!(state =/= idle && req.a_transpose && req.b_transpose))
 }
 
 
@@ -579,8 +579,8 @@ class GemvLoopMatmulStC(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   val max_blocks = Mux(req.full_c, 1.U, Mux(req.max_j <= max_block_len.U, req.max_j, max_block_len.U))
 
   // Non-normalization-related iterators and calculations
-  val j = Reg(UInt(iterator_bitwidth.W))
-  val i = Reg(UInt(iterator_bitwidth.W))
+  val j = RegInit(0.U(iterator_bitwidth.W))
+  val i = RegInit(0.U(iterator_bitwidth.W))
 
   val acc_addr_start = /*(BigInt(1) << 31).U | (req.full_c << 29.U).asUInt |*/ req.addr_start
 
@@ -605,9 +605,9 @@ class GemvLoopMatmulStC(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   mvout_cmd.rs2 := mvout_cmd_rs2.asUInt
 
   // Layernorm iterators and calculations
-  val ln_row = Reg(UInt(iterator_bitwidth.W))
-  val ln_cmd = Reg(UInt(iterator_bitwidth.W))
-  val ln_stat_id = Reg(UInt(iterator_bitwidth.W))
+  val ln_row = RegInit(0.U(iterator_bitwidth.W))
+  val ln_cmd = RegInit(0.U(iterator_bitwidth.W))
+  val ln_stat_id = RegInit(0.U(iterator_bitwidth.W))
 
   val NORM_STAT_IDS = 2 // TODO magic number
 
@@ -1059,8 +1059,8 @@ class GemvLoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_
   ex.io.req.bits.a_addr_start := Mux(loop_requesting_ex.a_ex_spad_id === 0.U, loop_requesting_ex.a_addr_start, (loop_requesting_ex.a_ex_spad_id - 1.U) * (max_addr / sp_banks).U)
   // ex.io.req.bits.b_addr_end := Mux(loop_requesting_ex.b_ex_spad_id === 0.U, loop_requesting_ex.b_addr_end, (loop_requesting_ex.b_ex_spad_id) * (max_addr / concurrent_loops).U) 
   ex.io.req.bits.b_addr_start := Mux(loop_requesting_ex.b_ex_spad_id === 0.U, loop_requesting_ex.b_addr_start, (loop_requesting_ex.b_ex_spad_id - 1.U) * (max_addr / sp_banks).U)
-  ex.io.req.bits.a_tranpose := loop_requesting_ex.a_transpose
-  ex.io.req.bits.b_tranpose := loop_requesting_ex.b_transpose
+  ex.io.req.bits.a_transpose := loop_requesting_ex.a_transpose
+  ex.io.req.bits.b_transpose := loop_requesting_ex.b_transpose
   // ex.io.req.bits.c_addr_start := ex_c_addr_start
   ex.io.req.bits.c_addr_start := Mux(loop_requesting_ex.c_ex_spad_id === 0.U, ex_c_addr_start,(loop_requesting_ex.c_ex_spad_id - 1.U) * (max_addr / sp_banks).U)
   ex.io.req.bits.loop_id := loop_requesting_ex_id
