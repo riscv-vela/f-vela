@@ -1,5 +1,5 @@
 prefix		:= /usr/local
-abs_top_srcdir	:= /home/esca/chipyard/generators/gemmini/software/gemmini-rocc-tests/build/..
+abs_top_srcdir	:= /home/esca/f-vela/NPU/software/build/..
 XLEN            := 64
 RISCVTOOLS      := @RISCVTOOLS@
 ROCC = examples
