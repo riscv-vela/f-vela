@@ -204,6 +204,56 @@ All of these can be built via `./build.sh` and then used as workloads in simulat
 
 ---
 
+## VPU Software & PID Test Workflow
+
+This section describes how to build and simulate the software for the RISC-V VPU(Saturn).
+
+### 1. Configure CMakeLists.txt
+
+Before building, you need to register the source files and enable the Vector extension in `CMakeLists.txt`.
+
+1. **Add Build Targets**:
+   Open `CMakeLists.txt` and add the following lines to register the executable and dump target:
+   ```cmake
+   # In the Build section
+   add_executable(vfpid_4d vfpid_4d.c)
+   
+   # In the Disassembly section
+   add_dump_target(vfpid_4d)
+   ```
+
+2. **Enable Vector Extension**:
+Important: Ensure that the CPU Architecture flags include the vector extension (v). You must append v to the architecture string in CMakeLists.txt (e.g., -march=rv64gcv).
+
+
+### 2. Build the PID Binary
+Navigate to the test directory and build the targets. This will generate *.riscv (binary) and *.dump (disassembly).
+```cmake
+cmake --build ./build/ --target all
+```
+
+### 3. Run Verilator Simulation
+You can run the generated binary on the Chipyard Verilator simulator using specific Rocket Chip configurations.
+
+Navigate to the simulator directory:
+```bash
+cd chipyard/sims/verilator
+```
+
+run with ex-512bit vlen, 256bit dlen config
+```bash
+make run-binary-debug CONFIG=REFV512D256RocketConfig VERILATOR_THREADS=8 -j$(nproc) BINARY=../../tests/build/vfpid_4d.riscv
+```
+
+### 4. Verify Output
+After the simulation completes, you can inspect the waveform to verify the PID operation. Check the generated VCD file in the output directory:
+```bash
+/sims/verilator/output/chipyard.TestHarness.<CONFIG>/PID.vcd
+```
+
+
+---
+
 ## Simulation and FPGA Execution
 
 ### 1. Verilator Simulation (Chipyard)
