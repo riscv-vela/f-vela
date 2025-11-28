@@ -122,7 +122,16 @@ The NPU is integrated by replacing the Gemmini module in Chipyard.
 
 ---
 
-## Building NPU Software (build.sh)
+## NPU Software & Testbench
+
+The NPU software directory serves two purposes:
+
+1. **It provides the software test suite**, including bare-metal, RoCC-based, and transformer workloads.
+2. **It produces all binaries used as workloads** for Verilator simulation, VCU118 FPGA execution, and FireSim (U280).
+
+All binaries are generated through a single entry point, `build.sh`, and the res
+
+## Building NPU Software
 
 The NPU software is organized as:
 
@@ -174,6 +183,26 @@ You can then take the binaries in `build/` and:
 
 - Load them in **Verilator** simulation as the test program, or  
 - Run them on the FPGA (VCU118 or U280/FireSim) as workloads to evaluate and experiment with the NPU.
+
+## Testbench and Software Stack
+
+Software tests live under `NPU/software/`:
+
+- `bareMetalC`  
+  Simple arithmetic / memory access / micro-benchmark tests
+  Includes `gemv_single` / `gemv_double` for INT8×INT8 GEMV acceleration (`gemv_auto`),  
+  and `mpgemm.c` for ternary tiled GEMM acceleration (`tiled_mpgemm_auto`).
+
+- `riscv-tests`  
+  Extended RISC-V tests that exercise NPU instructions and interfaces
+
+- `rocc-software`  
+  Programs that issue RoCC instructions to the NPU and validate results
+
+- `transformers`  
+  Small transformer or NN inference workloads that stress GEMM / vector paths in the NPU
+
+All of these can be built via `./build.sh` and then used as workloads in simulation or on FPGA.
 
 ---
 
@@ -229,33 +258,26 @@ Typical flow:
 
 ---
 
-## Testbench and Software Stack
+## Contributing and Contact
 
-The f-vela testing environment consists of:
+Contributions to **f-vela** are always welcome.
 
-### 1. RTL-Level Testbenches
+### How to Contribute
 
-- Integrated into the full SoC via Chipyard and FireSim.
-- You can run full-system tests using Verilator or FPGA (VCU118 / U280).
-- Module-level RTL testbenches (if any) can be added under each `src` directory and run with the standard Verilog/Chisel simulation flow.
+- If you find a bug, have a feature request, or need documentation updates,  
+  **please open an Issue** in this repository.
+- For code contributions (RTL, software tests, scripts, documentation, etc.),  
+  **please submit a Pull Request**.
+- When submitting a pull request, reference related issues (e.g., `Closes #5 #8 #9`).
 
-### 2. Software-Level Tests
+### Contact
 
-Software tests live under `NPU/software/`:
+If you have questions about using the NPU/VPU, building software,  
+or running on FPGA/FireSim, feel free to contact:
 
-- `bareMetalC`  
-  Simple arithmetic / memory access / micro-benchmark tests
+**bgiant6097@gmail.com**
 
-- `riscv-tests`  
-  Extended RISC-V tests that exercise NPU instructions and interfaces
-
-- `rocc-software`  
-  Programs that issue RoCC instructions to the NPU and validate results
-
-- `transformers`  
-  Small transformer or NN inference workloads that stress GEMM / vector paths in the NPU
-
-All of these can be built via `./build.sh` and then used as workloads in simulation or on FPGA.
+We encourage users to open GitHub Issues first so discussions remain visible to the community.
 
 <!-- ---
 
