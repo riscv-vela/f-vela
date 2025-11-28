@@ -129,8 +129,6 @@ The NPU software directory serves two purposes:
 1. **It provides the software test suite**, including bare-metal, RoCC-based, and transformer workloads.
 2. **It produces all binaries used as workloads** for Verilator simulation, VCU118 FPGA execution, and FireSim (U280).
 
-All binaries are generated through a single entry point, `build.sh`, and the res
-
 ## Building NPU Software
 
 The NPU software is organized as:
