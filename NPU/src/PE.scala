@@ -61,16 +61,8 @@ class PE[T <: Data :Arithmetic](inputType: T, outputType: T, max_simultaneous_ma
       }
     } 
 
-    def pipe[T <: Data](valid: Bool, t: T, latency: Int): T = {
-        // The default "Pipe" function apparently resets the valid signals to false.B. We would like to avoid using global
-        // signals in the Mesh, so over here, we make it clear that the reset signal will never be asserted
-        chisel3.withReset(false.B) { Pipe(valid, t, latency).bits }
-    }
 
     io.out_result := ShiftRegister(mul_unit.io.out_result, 1)
-    // io.out_valid := ShiftRegister(io.in_valid, 1)
-    // io.out_last := pipe(io.in_valid, io.in_last, 1)
-    // io.out_id := pipe(io.in_valid, io.in_id, 1)
     io.out_valid := io.in_valid
     io.out_last := io.in_last
     io.out_id := io.in_id
