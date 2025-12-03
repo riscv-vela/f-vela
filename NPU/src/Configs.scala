@@ -124,8 +124,8 @@ object GemminiConfigs {
 
         val t_rec = in_to_rec_fn.io.out
 
-        val muladder = Module(new MulAddRecFNPipe(2, f.expWidth, f.sigWidth))
-        muladder.io.validin := true.B
+        val muladder = Module(new MulAddRecFN( f.expWidth, f.sigWidth))
+        // muladder.io.validin := true.B
         muladder.io.op := 0.U
         muladder.io.roundingMode := consts.round_near_even
         muladder.io.detectTininess := consts.tininess_afterRounding
