@@ -65,6 +65,8 @@ class StoreSequencer(implicit p: Parameters) extends Sequencer[StoreDataMicroOp]
 
   val raw_hazard = ((vm_read_oh | vd_read_oh) & io.older_writes) =/= 0.U
   val data_hazard = raw_hazard
+  //dongin
+  dontTouch(raw_hazard)
 
   val oldest = inst.vat === io.vat_head
 

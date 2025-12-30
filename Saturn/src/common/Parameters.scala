@@ -21,16 +21,22 @@ object VectorParams {
   // For a standard modestly capable small vector unit with
   // SIMD functional units
   def refParams = minParams.copy(
+    vdqEntries = 2, // dongin
     vlrobEntries = 4,
+    vliqEntries = 4, // dongin
+    vsiqEntries = 4, // dongin
     vlissqEntries = 3,
     vsissqEntries = 3,
     vxissqEntries = 3,
+    vlifqEntries = 256, // dongin
+    vsifqEntries = 256, // dongin
     vpissqEntries = 1,
     vatSz = 5,
     useSegmentedIMul = true,
     doubleBufferSegments = true,
     useScalarFPFMA = false,
     vrfBanking = 4,
+    tlBuffer = 8 // dongin
     issStructure = VectorIssueStructure.Shared
   )
 

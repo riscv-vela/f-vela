@@ -32,6 +32,11 @@ class VectorMemMacroOp(implicit p: Parameters) extends CoreBundle()(p) with HasV
   val store = Bool()
   val fast_sg = Bool()
 
+  //dongin
+  val shift = Bool()
+  val cast = Bool()
+  val rs1_data = UInt(xLen.W)
+
   def indexed = !mop.isOneOf(mopUnit, mopStrided)
   def seg_nf = Mux(whole_reg, 0.U, nf)
   def wr_nf = Mux(whole_reg, nf, 0.U)
