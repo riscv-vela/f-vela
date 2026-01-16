@@ -265,5 +265,5 @@ class RoPEUnit(implicit p: Parameters)
   io.write.valid     := v3
   io.write.bits.data := wbData
   io.write.bits.eg   := s3_idx >> 3.U   // element-group index (VL=8 → idx/8)
-  io.write.bits.mask := "hFF".U(8.W)
+  io.write.bits.mask := Fill(128, 1.U)
 }
