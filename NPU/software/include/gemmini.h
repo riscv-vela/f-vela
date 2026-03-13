@@ -1170,7 +1170,7 @@ static void gemv_auto(size_t dim_I, size_t dim_J, size_t dim_K,
 
 //This function is for mpgemm
 
-static void tiled_mpgemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
+static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
         const elem_t* A, const elem_t* B,
         const void * D, void * C,
         size_t stride_A, size_t stride_B, size_t stride_D, size_t stride_C,
