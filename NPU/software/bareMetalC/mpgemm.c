@@ -99,7 +99,7 @@ int main() {
     printf("A_TRANSPOSE: %d, B_TRANSPOSE: %d\n", A_TRANSPOSE, B_TRANSPOSE);
     uint64_t start = read_cycles();
 
-    tiled_mpgemm_auto(MAT_DIM_I, MAT_DIM_J, MAT_DIM_K,
+    ternary_gemm_auto(MAT_DIM_I, MAT_DIM_J, MAT_DIM_K,
             (elem_t*)full_A, (elem_t*)full_B, NO_BIAS ? NULL : &full_D[0][0], (elem_t*)full_C,
             A_STRIDE, B_STRIDE, D_STRIDE, C_STRIDE,
             MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY,
