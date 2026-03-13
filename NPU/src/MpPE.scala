@@ -3,17 +3,29 @@ package gemmini
 import chisel3._
 import chisel3.util._
 
+// class TernaryMulUnit(val inWidth: Int) extends Module {
+//   val io = IO(new Bundle {
+//     val in_a = Input(SInt(inWidth.W))
+//     val in_b = Input(SInt(2.W))
+//     val out_result = Output(SInt(inWidth.W))
+//   })
+//   val b1 = io.in_b(1)
+//   val b0 = io.in_b(0)
+//   val inverted_a = io.in_a ^ Fill(inWidth, b1).asSInt
+//   val sum = (inverted_a.asUInt + b1).asSInt
+//   io.out_result := sum & Fill(inWidth, b0).asSInt
+// }
+
 class TernaryMulUnit(val inWidth: Int) extends Module {
   val io = IO(new Bundle {
     val in_a = Input(SInt(inWidth.W))
     val in_b = Input(SInt(2.W))
     val out_result = Output(SInt(inWidth.W))
   })
-  val b1 = io.in_b(1)
-  val b0 = io.in_b(0)
-  val inverted_a = io.in_a ^ Fill(inWidth, b1).asSInt
-  val sum = (inverted_a.asUInt + b1).asSInt
-  io.out_result := sum & Fill(inWidth, b0).asSInt
+  val b = io.in_b.asUInt
+  val neg = -io.in_a
+  val signed = Mux(b(1), neg, io.in_a)   // b1: sign
+  io.out_result := Mux(b(0), signed, 0.S) // b0: enable
 }
 
 class MpMulUnit[T <: Data](inputType: T, weightType: T) (implicit ev: Arithmetic[T]) extends Module {
@@ -90,7 +102,6 @@ class MpPE[T <: Data :Arithmetic](inputType: T, weightType: T, max_simultaneous_
         c2 := io.in_b
       }
     } 
-
 
     io.out_result := ShiftRegister(mul_unit.io.out_result, 1)
     io.out_valid := io.in_valid

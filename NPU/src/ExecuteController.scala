@@ -14,7 +14,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   
   val io = IO(new Bundle {
       val cmd = Flipped(Decoupled(new GemminiCmd(reservation_station_entries)))
-
+      val im2col = new Bundle {
+        val req = Decoupled(new Im2ColReadReq(config))
+        val resp = Flipped(Decoupled(new Im2ColReadResp(config)))
+      }
       val srams = new Bundle {
           val read = Vec(sp_banks, new ScratchpadReadIO(sp_bank_entries, sp_width))
           val write = Vec(sp_banks, new ScratchpadWriteIO(sp_bank_entries, sp_width, (sp_width / (aligned_to * 8)) max 1))
@@ -73,6 +76,28 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   val in_prop_flush = RegInit(false.B)
   in_prop_flush := false.B
+
+  val ocol = RegInit(0.U(8.W))
+  val orow = RegInit(0.U(8.W))
+  val krow = RegInit(0.U(4.W))
+  val weight_stride = RegInit(0.U(3.W))
+  val channel = RegInit(0.U(9.W))
+  val row_turn = RegInit(0.U(11.W))
+  val row_left = RegInit(0.U(4.W))
+  val kdim2 = RegInit(0.U(8.W))
+  val weight_double_bank = RegInit(false.B)
+  val weight_triple_bank = RegInit(false.B)
+
+  val icol = WireInit(0.U(9.W))
+  val irow = WireInit(0.U(9.W))
+
+  icol := ((ocol - 1.U) * weight_stride + krow)//.asSInt
+  irow := ((orow - 1.U) * weight_stride + krow)//.asSInt
+
+  val im2col_turn = WireInit(0.U(9.W))
+  val im2col_en = config.hasIm2Col.B && weight_stride =/= 0.U
+  val im2col_wire = io.im2col.req.ready
+
 
   val acc_scale = Reg(acc_scale_t)
   val activation = if (has_nonlinear_activations) Reg(UInt(Activation.bitwidth.W)) else Activation.NONE // TODO magic number
@@ -141,8 +166,6 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   wontolic.io.req.bits.tag.rob_id := cntl.rob_id
   wontolic.io.req.bits.in_prop := Mux(control_state === flush, in_prop_flush, cntl.prop)
   wontolic.io.req.bits.b_transpose := cntl.b_transpose
-  wontolic.io.req.bits.in_acc := cntl.in_acc
-  wontolic.io.req.bits.in_preload := cntl.in_preload
   wontolic.io.req.bits.is_mpgemm := cntl.is_mpgemm
 //Hazards
   val raw_hazards_are_impossible = !ex_read_from_acc && !ex_write_to_spad // Special case where RAW hazards are impossible
@@ -217,24 +240,8 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val performing_mul_pre = WireInit(perform_mul_pre && control_state === compute)
 
   val total_rows = WireInit(block_size.U)
-
-  val in_acc = (rs1s(0)(rs1s(0).getWidth - 1)).asBool
   val in_prop = functs(0) === COMPUTE_AND_FLIP_CMD
-
   val is_mpgemm = rs2s(0)(rs2s(0).getWidth - 1).asBool
-
-  val in_acc_buf = RegInit(false.B)
-  val in_preload = RegInit(false.B)
-
-  val cmd_pop_next = RegNext(cmd.pop =/= 0.U)
-  when(cmd_pop_next && DoComputes(0)){
-    in_acc_buf := in_acc
-  }
-  when(DoPreloads(0)){
-    in_preload := true.B
-  } .otherwise {
-    in_preload := false.B
-  }
 
 
   // TODO Also reduce the number of rows when "perform_single_preload === true.B"
@@ -256,7 +263,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   }
 
   //mul_pre sync가 필요한지 생각해보기
-
+  val mul_pre_counter_sub = RegInit(0.U(3.W))
+  val mul_pre_counter_count = RegInit(0.U(3.W))
+  val mul_pre_counter_lock = RegInit(false.B)
   // These variables determine whether or not the row that is currently being read should be completely padded with 0
   // 실제 행렬의 유효 범위를 초과할 경우.
   val a_row_is_not_all_zeros = a_fire_counter < a_rows
@@ -264,12 +273,13 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val d_row_is_not_all_zeros = d_fire_counter < d_rows
 
   // scratch pad 혹은 accumulator의 같은 뱅크에서 데이터를 가져오는 경우.
-  def same_bank(addr1: LocalAddr, addr2: LocalAddr, is_garbage1: Bool, is_garbage2: Bool, start_inputting1: Bool, start_inputting2: Bool): Bool = {
+  def same_bank(addr1: LocalAddr, addr2: LocalAddr, is_garbage1: Bool, is_garbage2: Bool, start_inputting1: Bool, start_inputting2: Bool, can_be_im2colled: Boolean): Bool = {
     val addr1_read_from_acc = addr1.is_acc_addr
     val addr2_read_from_acc = addr2.is_acc_addr
     val is_garbage = is_garbage1 || is_garbage2 || !start_inputting1 || !start_inputting2
+    val is_being_im2colled = can_be_im2colled.B && im2col_wire && im2col_en//im2col_wire
 
-    !is_garbage && ((addr1_read_from_acc && addr2_read_from_acc) ||  
+    !is_garbage && !is_being_im2colled && ((addr1_read_from_acc && addr2_read_from_acc) ||  
     (!addr1_read_from_acc && !addr2_read_from_acc && addr1.sp_bank() === addr2.sp_bank()))
   }
 
@@ -278,18 +288,18 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val d_ready = WireInit(true.B)
 
   //Same bank일 때, 충돌 해결 로직(같은 뱅크에서 읽어오는 행위가 한사이클 차이만 난다면, stall -> 과연 필요한가?)
-  case class Operand(addr: LocalAddr, is_garbage: Bool, start_inputting: Bool, counter: UInt, started: Bool, priority: Int) {
+  case class Operand(addr: LocalAddr, is_garbage: Bool, start_inputting: Bool, counter: UInt, started: Bool, can_be_im2colled: Boolean, priority: Int) {
     val done = counter === 0.U && started
   }
-  val a_operand = Operand(a_address, a_address_rs1.is_garbage(), start_inputting_a, a_fire_counter, a_fire_started, 0)
-  val b_operand = Operand(b_address, b_address_rs1.is_garbage(), start_inputting_b, b_fire_counter, b_fire_started, 1)
-  val d_operand = Operand(d_address, d_address_rs2.is_garbage(), start_inputting_d, d_fire_counter, d_fire_started, 2)
+  val a_operand = Operand(a_address, a_address_rs1.is_garbage(), start_inputting_a, a_fire_counter, a_fire_started, true,0)
+  val b_operand = Operand(b_address, b_address_rs1.is_garbage(), start_inputting_b, b_fire_counter, b_fire_started, false, 1)
+  val d_operand = Operand(d_address, d_address_rs2.is_garbage(), start_inputting_d, d_fire_counter, d_fire_started, false, 2)
   val operands = Seq(a_operand, b_operand, d_operand)
 
-  val Seq(a_valid, b_valid, d_valid) = operands.map { case Operand(addr, is_garbage, start_inputting, counter, started, priority) =>
+  val Seq(a_valid, b_valid, d_valid) = operands.map { case Operand(addr, is_garbage, start_inputting, counter, started, can_be_im2colled, priority) =>
     val others = operands.filter(_.priority != priority)
 
-    val same_banks = others.map(o => same_bank(addr, o.addr, is_garbage, o.is_garbage, start_inputting, o.start_inputting))
+    val same_banks = others.map(o => same_bank(addr, o.addr, is_garbage, o.is_garbage, start_inputting, o.start_inputting, can_be_im2colled || o.can_be_im2colled))
     val same_counter = others.map(o => started === o.started && counter === o.counter)
 
     val one_ahead = others.map(o => started && counter === wrappingAdd(o.counter, 1.U, total_rows))
@@ -334,7 +344,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     d_fire_started := true.B
   }
 
-/* 현재 코드에서는 저장해 놓은 mul_pre_counter_count가 사용되지 않고 있음
+// 현재 코드에서는 저장해 놓은 mul_pre_counter_count가 사용되지 않고 있음
   //cntl_ready가 되지 않아 stall이 발생한다면 b_fire_counter+1 저장
   when(performing_mul_pre && !cntl_ready && !mul_pre_counter_lock){
     mul_pre_counter_count := b_fire_counter //store 2
@@ -344,9 +354,16 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   }.elsewhen(!cntl_ready){
     mul_pre_counter_lock := true.B
   }
-*/
+//
   // The last line in this (long) Boolean is just to make sure that we don't think we're done as soon as we begin firing
   // TODO change when square requirement lifted
+  when(!io.im2col.resp.bits.im2col_delay && performing_mul_pre){
+    mul_pre_counter_sub := Mux(mul_pre_counter_sub > 0.U,  mul_pre_counter_sub - 1.U, 0.U)
+  }.elsewhen(io.im2col.resp.bits.im2col_delay){
+    mul_pre_counter_sub := 2.U
+  }.otherwise{mul_pre_counter_sub := 0.U}
+
+
   val about_to_fire_all_rows = ((a_fire_counter === (total_rows-1.U) && a_fire) || a_fire_counter === 0.U) &&
     ((b_fire_counter === (total_rows-1.U) && b_fire) || b_fire_counter === 0.U) &&
     ((d_fire_counter === (total_rows-1.U) && d_fire) || d_fire_counter === 0.U) &&
@@ -359,7 +376,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     d_fire_started := false.B
   }
 
-
+  val d_fire_counter_mulpre = WireInit(b_fire_counter)
+  when(performing_mul_pre && !io.im2col.resp.bits.im2col_delay&&im2col_en){
+    d_fire_counter_mulpre := d_fire_counter - mul_pre_counter_sub
+  }.otherwise{d_fire_counter_mulpre := d_fire_counter}
   // Scratchpad reads   
     for (i <- 0 until sp_banks) {
     val read_a = a_valid && !a_read_from_acc && dataAbank === i.U && start_inputting_a && !multiply_garbage && a_row_is_not_all_zeros
@@ -378,7 +398,11 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
       io.srams.read(i).req.bits.addr := MuxCase(a_address_rs1.sp_row() + a_fire_counter,
         Seq(read_b -> (b_address_rs1.sp_row() + b_fire_counter),
           read_d -> (d_address_rs2.sp_row() + d_fire_counter)))
-
+      when(im2col_en === false.B) {
+        io.srams.read(i).req.bits.addr := MuxCase(a_address.sp_row(),
+          Seq(read_b -> b_address.sp_row(),
+            read_d -> d_address.sp_row()))
+      }
     } else {
       io.srams.read(i).req.valid := false.B
       io.srams.read(i).req.bits.fromDMA := false.B
@@ -413,7 +437,11 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
       io.acc.read_req(i).bits.addr := MuxCase(a_address_rs1.acc_row() + a_fire_counter,
         Seq(read_b_from_acc -> (b_address_rs1.acc_row() + b_fire_counter),
           read_d_from_acc -> (d_address_rs2.acc_row() + d_fire_counter)))
-
+      when(im2col_en === false.B){
+        io.acc.read_req(i).bits.addr := MuxCase(a_address.acc_row(),
+          Seq(read_b_from_acc -> b_address.acc_row(),
+            read_d_from_acc -> d_address.acc_row()))
+      }
 
     } else {
       io.acc.read_req(i).valid := false.B
@@ -430,7 +458,31 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
     io.acc.read_resp(i).ready := false.B
   }
+ {
+    val read_a = a_valid && start_inputting_a && !multiply_garbage && im2col_wire&&im2col_en //or just im2col_wire
 
+    when (read_a && !io.im2col.req.ready) {
+      a_ready := false.B
+    }
+
+    io.im2col.req.valid := read_a
+    io.im2col.req.bits.addr := a_address_rs1
+    io.im2col.req.bits.icol := icol
+    io.im2col.req.bits.irow := irow
+    io.im2col.req.bits.ocol := ocol
+    io.im2col.req.bits.stride := weight_stride
+    io.im2col.req.bits.krow := krow
+    io.im2col.req.bits.kdim2 := kdim2
+    io.im2col.req.bits.row_turn := row_turn
+    io.im2col.req.bits.row_left := row_left
+    io.im2col.req.bits.channel := channel
+    io.im2col.req.bits.im2col_cmd := im2col_en
+    io.im2col.req.bits.start_inputting := start_inputting_a
+    io.im2col.req.bits.weight_double_bank := weight_double_bank
+    io.im2col.req.bits.weight_triple_bank := weight_triple_bank
+
+    io.im2col.resp.ready := wontolic.io.a.ready
+  }
 
   // FSM logic
   switch (control_state) {
@@ -471,6 +523,17 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
             a_addr_stride := config_ex_rs1.a_stride // TODO this needs to be kept in sync with ROB.scala
             c_addr_stride := config_ex_rs2.c_stride // TODO this needs to be kept in sync with ROB.scala
             config_initialized := true.B
+          }.otherwise { // config_cmd_type === CONFIG_IM2COL
+            ocol := cmd.bits(0).cmd.rs2(63, 56)
+            kdim2 := cmd.bits(0).cmd.rs2(55, 48) //increased bitwidth
+            krow := cmd.bits(0).cmd.rs2(47, 44) //increased bitwidth
+            channel := cmd.bits(0).cmd.rs2(31, 23)
+            weight_stride := cmd.bits(0).cmd.rs2(22, 20)
+            weight_double_bank := cmd.bits(0).cmd.rs1(58) //added
+            weight_triple_bank := cmd.bits(0).cmd.rs1(59)
+            row_left := cmd.bits(0).cmd.rs1(57, 54)
+            row_turn := cmd.bits(0).cmd.rs1(53, 42)
+          
           }
 
           io.completed := cmd.bits(0).rob_id
@@ -627,9 +690,8 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
     val first = Bool()
     val b_transpose = Bool()
-    val in_acc = Bool()
-    val in_preload = Bool()
     val is_mpgemm = Bool()
+    val im2colling = Bool()
   }
 
   mesh_cntl_signals_q.io.enq.valid := computing
@@ -679,10 +741,11 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   mesh_cntl_signals_q.io.enq.bits.first := !a_fire_started && !b_fire_started && !d_fire_started
   mesh_cntl_signals_q.io.enq.bits.b_transpose := b_transpose
-  mesh_cntl_signals_q.io.enq.bits.in_acc := in_acc_buf
-  mesh_cntl_signals_q.io.enq.bits.in_preload := in_preload
   mesh_cntl_signals_q.io.enq.bits.is_mpgemm := is_mpgemm
 
+  mesh_cntl_signals_q.io.enq.bits.im2colling := im2col_wire && im2col_en
+  val im2ColData = io.im2col.resp.bits.a_im2col.asUInt
+  val im2ColValid = io.im2col.resp.valid
 
   val readData = VecInit(io.srams.read.map(_.resp.bits.data))
   val accReadData = if (ex_read_from_acc) VecInit(io.acc.read_resp.map(_.bits.data.asUInt)) else readData
@@ -695,7 +758,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     (!cntl.d_fire || wontolic.io.d.fire || !wontolic.io.d.ready) &&
     (!cntl.first || wontolic.io.req.ready)
 
-  val dataA_valid = cntl.a_garbage || cntl.a_unpadded_cols === 0.U || Mux(cntl.a_read_from_acc, accReadValid(cntl.a_bank_acc), readValid(cntl.a_bank))
+  val dataA_valid = cntl.a_garbage || cntl.a_unpadded_cols === 0.U || Mux(cntl.im2colling, im2ColValid, Mux(cntl.a_read_from_acc, accReadValid(cntl.a_bank_acc), readValid(cntl.a_bank)))
 
   val dataB_valid = cntl.b_garbage || cntl.b_unpadded_cols === 0.U || MuxCase(readValid(cntl.b_bank), Seq(
     cntl.preload_zeros -> false.B,
@@ -710,7 +773,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val preload_zero_counter = RegInit(0.U(5.W))
   preload_zero_counter := wrappingAdd(preload_zero_counter, 1.U, block_size.U, dataA_valid && dataB_valid && cntl.preload_zeros && (cntl.perform_single_preload || cntl.perform_mul_pre))
 
-  val dataA_unpadded = Mux(cntl.a_read_from_acc, accReadData(cntl.a_bank_acc), readData(cntl.a_bank))
+  val dataA_unpadded = Mux(cntl.im2colling, im2ColData, Mux(cntl.a_read_from_acc, accReadData(cntl.a_bank_acc), readData(cntl.a_bank)))
   val dataB_unpadded = MuxCase(readData(cntl.b_bank), Seq(cntl.preload_zeros -> 0.U, cntl.b_read_from_acc -> accReadData(cntl.b_bank_acc)))
   val dataD_unpadded = MuxCase(readData(cntl.d_bank), Seq(cntl.accumulate_zeros -> 0.U, cntl.d_read_from_acc -> accReadData(cntl.d_bank_acc)))
 
@@ -720,7 +783,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   // Pop responses off the scratchpad io ports
   when (mesh_cntl_signals_q.io.deq.fire) {
-    when (cntl.a_fire && wontolic.io.a.fire && !cntl.a_garbage && cntl.a_unpadded_cols > 0.U ) {
+    when (cntl.a_fire && wontolic.io.a.fire && !cntl.a_garbage && cntl.a_unpadded_cols > 0.U && !cntl.im2colling) {
       when (cntl.a_read_from_acc) {
         io.acc.read_resp(cntl.a_bank_acc).ready := !io.acc.read_resp(cntl.a_bank_acc).bits.fromDMA
       }.otherwise {
@@ -799,7 +862,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val w_mask = (0 until block_size).map(_.U < w_matrix_cols) // This is an element-wise mask, rather than a byte-wise mask
 
   val mpgemm_output_data = VecInit(wontolic.io.resp.bits.data.map(_.withWidthOf(accType)))
-  val mpgemm_data_chunks = VecInit(mpgemm_output_data.grouped(16).map(chunk => VecInit(chunk)).toSeq)
+  val mpgemm_data_chunks = VecInit(mpgemm_output_data.grouped(block_size).map(chunk => VecInit(chunk)).toSeq)
 
   val acc_valid = start_array_outputting && write_to_acc && !is_garbage_addr && write_this_row
 
@@ -830,9 +893,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   for (i <- 0 until acc_banks) {
     if (ex_write_to_acc) {
       io.acc.write(i).valid := Mux(wontolic.io.resp.bits.is_mpgemm, acc_valid, acc_valid && w_bank === i.U)
+      // io.acc.write(i).valid := acc_valid
       io.acc.write(i).bits.addr := w_row
-      // val flatData = VecInit(wontolic.io.resp.bits.data.map(_.withWidthOf(accType)).toList)
       val flatData = Mux(wontolic.io.resp.bits.is_mpgemm, mpgemm_data_chunks(i), mpgemm_data_chunks(0))
+      // val flatData = mpgemm_data_chunks(i)
       io.acc.write(i).bits.data :=  VecInit(flatData.map(e => VecInit(Seq(e))))
       io.acc.write(i).bits.acc := w_address.accumulate
       io.acc.write(i).bits.mask := w_mask.flatMap(b => Seq.fill(accType.getWidth / (aligned_to * 8))(b))
@@ -898,13 +962,13 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   io.counter.connectEventSignal(CounterEvent.B_GARBAGE_CYCLES, cntl.b_garbage)
   io.counter.connectEventSignal(CounterEvent.D_GARBAGE_CYCLES, cntl.d_garbage)
   io.counter.connectEventSignal(CounterEvent.ACC_A_WAIT_CYCLE,
-    !(!cntl.a_fire || wontolic.io.a.fire || !wontolic.io.a.ready) && cntl.a_read_from_acc)
+    !(!cntl.a_fire || wontolic.io.a.fire || !wontolic.io.a.ready) && cntl.a_read_from_acc && !cntl.im2colling)
   io.counter.connectEventSignal(CounterEvent.ACC_B_WAIT_CYCLE,
     !(!cntl.b_fire || wontolic.io.b.fire || !wontolic.io.b.ready) && cntl.b_read_from_acc)
   io.counter.connectEventSignal(CounterEvent.ACC_D_WAIT_CYCLE,
     !(!cntl.d_fire || wontolic.io.d.fire || !wontolic.io.d.ready) && cntl.d_read_from_acc)
   io.counter.connectEventSignal(CounterEvent.SCRATCHPAD_A_WAIT_CYCLE,
-    !(!cntl.a_fire || wontolic.io.a.fire || !wontolic.io.a.ready) && !cntl.a_read_from_acc)
+    !(!cntl.a_fire || wontolic.io.a.fire || !wontolic.io.a.ready) && !cntl.a_read_from_acc && !cntl.im2colling)
   io.counter.connectEventSignal(CounterEvent.SCRATCHPAD_B_WAIT_CYCLE,
     !(!cntl.b_fire || wontolic.io.b.fire || !wontolic.io.b.ready) && !cntl.b_read_from_acc)
   io.counter.connectEventSignal(CounterEvent.SCRATCHPAD_D_WAIT_CYCLE,
@@ -921,9 +985,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   }
 
  // Performance counter
-  io.counter.connectEventSignal(CounterEvent.IM2COL_ACTIVE_CYCLES, false.B)
-  io.counter.connectEventSignal(CounterEvent.IM2COL_MEM_CYCLES, false.B)
-  io.counter.connectEventSignal(CounterEvent.IM2COL_TRANSPOSER_WAIT_CYCLE, false.B)
+  // io.counter.connectEventSignal(CounterEvent.IM2COL_ACTIVE_CYCLES, false.B)
+  // io.counter.connectEventSignal(CounterEvent.IM2COL_MEM_CYCLES, false.B)
+  // io.counter.connectEventSignal(CounterEvent.IM2COL_TRANSPOSER_WAIT_CYCLE, false.B)
   io.counter.connectEventSignal(CounterEvent.TRANSPOSE_PRELOAD_UNROLLER_ACTIVE_CYCLES, false.B)  
 
 

@@ -61,7 +61,6 @@ class PE[T <: Data :Arithmetic](inputType: T, outputType: T, max_simultaneous_ma
       }
     } 
 
-
     io.out_result := ShiftRegister(mul_unit.io.out_result, 1)
     io.out_valid := io.in_valid
     io.out_last := io.in_last
