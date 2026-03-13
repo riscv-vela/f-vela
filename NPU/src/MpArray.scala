@@ -19,12 +19,14 @@ class MpAdderTree[T <: Data : Arithmetic](inputType: T, outputType: T, ma_length
         val out_id = Output( UInt(log2Up(max_simultaneous_matmuls).W))
     })
 
+    val in_ext = io.in.map(_.withWidthOf(outputType))
+
     def treeAdd(n: Seq[T]): T = {
         if (n.length == 1) {
             n.head
         } else {
             val result = n.grouped(2).map {
-                case Seq(a, b) => a + b
+                case Seq(a, b) => (a + b).clippedToWidthOf(outputType)
                 case Seq(a) => a
             }.toSeq
 
@@ -32,7 +34,7 @@ class MpAdderTree[T <: Data : Arithmetic](inputType: T, outputType: T, ma_length
         }
     }
 
-    io.out := treeAdd(io.in).clippedToWidthOf(outputType)
+    io.out := treeAdd(in_ext)
     io.out_valid := io.in_valid.head
     io.out_last := io.in_last.head
     io.out_id := io.in_id.head
@@ -45,6 +47,7 @@ class MpMularray[T <: Data](inputType: T, weightType: T, outputType: T, ma_lengt
     val io = IO(new Bundle {
         val in_a = Input(Vec(ma_length, inputType))
         val in_b = Input(weightType)
+        val in_b_vec = Input(Vec(ma_length, weightType))
 
         val in_last = Input(Vec(ma_length, Bool()))
         val in_valid = Input(Vec(ma_length, Bool()))
@@ -52,6 +55,7 @@ class MpMularray[T <: Data](inputType: T, weightType: T, outputType: T, ma_lengt
         val in_prop = Input(Vec(ma_length, Bool()))
         val in_fire_counter = Input(UInt(log2Up(ma_length).W))
         val in_b_fire = Input(Bool())
+        val in_b_transpose = Input(Bool())
 
         val out_sum = Output(outputType)
         val out_last = Output(Bool())
@@ -80,9 +84,12 @@ class MpMularray[T <: Data](inputType: T, weightType: T, outputType: T, ma_lengt
         val b_scalar_val = Mux(sel, io.in_b, 0.U.asTypeOf(weightType))
         val b_fire_scalar = Mux(sel, io.in_b_fire, false.B)
 
+        val b_vector_val = io.in_b_vec(idx)
+        val b_fire_vector = io.in_b_fire
+
         // io.in_b_transpose 값에 따라 두 로직 중 하나를 선택하여 PE에 연결
-        pe.io.in_b      := b_scalar_val
-        pe.io.in_b_fire := b_fire_scalar
+        pe.io.in_b      := Mux(io.in_b_transpose, b_vector_val, b_scalar_val)
+        pe.io.in_b_fire := Mux(io.in_b_transpose, b_fire_vector, b_fire_scalar)
     }
 
     //각 pe의 결과 값을 adderTree의 입력으로 연결
@@ -91,12 +98,10 @@ class MpMularray[T <: Data](inputType: T, weightType: T, outputType: T, ma_lengt
     adderTree.io.in_last := VecInit(pe_array.map(_.io.out_last))
     adderTree.io.in_id := VecInit(pe_array.map(_.io.out_id))
 
-
     //adder Tree 결과값 연결
     io.out_sum := adderTree.io.out
     io.out_valid := adderTree.io.out_valid
     io.out_last := adderTree.io.out_last
     io.out_id := adderTree.io.out_id
-
 }
 

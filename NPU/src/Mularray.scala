@@ -19,12 +19,14 @@ class AdderTree[T <: Data : Arithmetic](outputType: T, ma_length: Int, max_simul
         val out_id = Output( UInt(log2Up(max_simultaneous_matmuls).W))
     })
 
+    val in_ext = io.in.map(_.withWidthOf(outputType))
+
     def treeAdd(n: Seq[T]): T = {
         if (n.length == 1) {
             n.head
         } else {
             val result = n.grouped(2).map {
-                case Seq(a, b) => a + b
+                case Seq(a, b) => (a + b).clippedToWidthOf(outputType)
                 case Seq(a) => a
             }.toSeq
 
@@ -32,7 +34,7 @@ class AdderTree[T <: Data : Arithmetic](outputType: T, ma_length: Int, max_simul
         }
     }
 
-    io.out := treeAdd(io.in).clippedToWidthOf(outputType)
+    io.out := treeAdd(in_ext)
     io.out_valid := io.in_valid.reduce(_||_)
     io.out_last := io.in_last.reduce(_||_)
     io.out_id := io.in_id.head

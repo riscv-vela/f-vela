@@ -84,77 +84,6 @@ class AccScalePipe[T <: Data, U <: Data](t: T, rDataType: Vec[Vec[T]], scale_fun
   io.out := Pipe(out, latency)
 }
 
-// class AccScalePipe[T <: Data, U <: Data](
-//   t: T,
-//   rDataType: Vec[Vec[T]],
-//   scale_func: (T, U) => T,
-//   scale_t: U,
-//   latency: Int,
-//   has_nonlinear_activations: Boolean,
-//   has_normalizations: Boolean
-// )(implicit ev: Arithmetic[T]) extends Module {
-//   import ev._
-//   val io = IO(new Bundle {
-//     val in  = Input(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//     val out = Output(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//   })
-
-//   // S1: activation + scale 선택
-//   val s1w = Wire(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//   s1w.valid := io.in.valid
-//   s1w.bits  := io.in.bits
-
-//   val act = io.in.bits.act
-//   assert(has_normalizations.B || (!io.in.valid) ||
-//     (act =/= Activation.LAYERNORM && act =/= Activation.SOFTMAX && act =/= Activation.IGELU))
-
-//   val e0 = io.in.bits.data
-//   val e_act = MuxCase(e0, Seq(
-//     (has_nonlinear_activations.B && act === Activation.RELU)      -> e0.relu,
-//     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
-//       (e0 - io.in.bits.mean),
-//     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.IGELU) ->
-//       AccumulatorScale.igelu(e0, io.in.bits.igelu_qb, io.in.bits.igelu_qc),
-//     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
-//       AccumulatorScale.iexp(e0 - io.in.bits.max, io.in.bits.iexp_qln2, io.in.bits.iexp_qln2_inv, io.in.bits.igelu_qb, io.in.bits.igelu_qc)
-//   ))
-
-//   val scale_sel = MuxCase(io.in.bits.scale, Seq(
-//     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) -> io.in.bits.inv_stddev,
-//     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX)   -> io.in.bits.inv_sum_exp.asTypeOf(scale_t)
-//   )).asTypeOf(scale_t)
-
-//   s1w.bits.data  := e_act
-//   s1w.bits.scale := scale_sel
-//   val s1 = Pipe(s1w, 1)  // 1단
-
-//   // S2a: 곱의 피연산자 레지스터
-//   val s2aw = Wire(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//   s2aw.valid := s1.valid
-//   s2aw.bits  := s1.bits
-//   val s2a = Pipe(s2aw, 1) // 1단
-
-//   // S3: 스케일 곱/라운딩 결과를 바로 레지스터에
-//   val e_scaled = scale_func(s2a.bits.data, s2a.bits.scale)
-//   val s3w = Wire(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//   s3w.valid := s2a.valid
-//   s3w.bits  := s2a.bits
-//   s3w.bits.data := e_scaled
-//   val s3 = Pipe(s3w, 1) // 1단
-
-//   // S4: clip만 별도
-//   val e_clipped = s3.bits.data.clippedToWidthOf(rDataType.head.head)
-//   val s4w = Wire(Valid(new AccScaleDataWithIndex(t, scale_t)(ev)))
-//   s4w.valid := s3.valid
-//   s4w.bits  := s3.bits
-//   s4w.bits.data := e_clipped
-//   val s4 = Pipe(s4w, 1) // 1단
-
-//   // 정렬용 추가 latency
-//   io.out := Pipe(s4, latency)
-// }
-
-
 
 class AccumulatorScale[T <: Data, U <: Data](
   fullDataType: Vec[Vec[T]], rDataType: Vec[Vec[T]],
@@ -184,131 +113,51 @@ class AccumulatorScale[T <: Data, U <: Data](
     val iexp_qln2_inv = io.in.bits.acc_read_resp.iexp_qln2_inv
     val scale = io.in.bits.acc_read_resp.scale
 
-    // val activated_data = VecInit(data.map(v => VecInit(v.map { e =>
-    //   val e_act = MuxCase(e, Seq(
-    //     (has_nonlinear_activations.B && act === Activation.RELU) -> e.relu,
-    //     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
-    //       (e - io.in.bits.mean),
-    //     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.IGELU) ->
-    //       AccumulatorScale.igelu(e, igelu_qb, igelu_qc),
-    //     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
-    //       AccumulatorScale.iexp(e - io.in.bits.max, iexp_qln2, iexp_qln2_inv, igelu_qb, igelu_qc),
-    //   ))
+    val activated_data = VecInit(data.map(v => VecInit(v.map { e =>
+      val e_act = MuxCase(e, Seq(
+        (has_nonlinear_activations.B && act === Activation.RELU) -> e.relu,
+        (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
+          (e - io.in.bits.mean),
+        (has_nonlinear_activations.B && has_normalizations.B && act === Activation.IGELU) ->
+          AccumulatorScale.igelu(e, igelu_qb, igelu_qc),
+        (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
+          AccumulatorScale.iexp(e - io.in.bits.max, iexp_qln2, iexp_qln2_inv, igelu_qb, igelu_qc),
+      ))
 
-    //   val e_scaled = scale_func(e_act, MuxCase(scale, Seq(
-    //     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
-    //       io.in.bits.inv_stddev,
-    //     (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
-    //       io.in.bits.inv_sum_exp.asTypeOf(scale_t)
-    //   )).asTypeOf(scale_t))
+      val e_scaled = scale_func(e_act, MuxCase(scale, Seq(
+        (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
+          io.in.bits.inv_stddev,
+        (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
+          io.in.bits.inv_sum_exp.asTypeOf(scale_t)
+      )).asTypeOf(scale_t))
 
-    //   val e_clipped = e_scaled.clippedToWidthOf(rDataType.head.head)
+      // val e_clipped = e_scaled.clippedToWidthOf(rDataType.head.head)
 
-    //   e_clipped
-    // })))
+      // e_clipped
+      e_scaled
+    })))
 
-    // val in = Wire(Decoupled(new AccumulatorReadRespWithFullData(fullDataType, scale_t)(ev)))
-    // in.valid := io.in.valid
-    // io.in.ready := in.ready
-    // in.bits.resp := io.in.bits.acc_read_resp
+    val clipped_data = VecInit(activated_data.map(v => VecInit(v.map { e_scaled =>
+      e_scaled.clippedToWidthOf(rDataType.head.head)
+    })))
+
+    val in = Wire(Decoupled(new AccumulatorReadRespWithFullData(fullDataType, scale_t)(ev)))
+    in.valid := io.in.valid
+    io.in.ready := in.ready
+    in.bits.resp := io.in.bits.acc_read_resp
     // in.bits.full_data := acc_read_data
     // in.bits.resp.data := activated_data
+    in.bits.full_data := activated_data
+    in.bits.resp.data := clipped_data
 
-    // val pipe_out = Pipeline(in, latency)
-
-    // out.valid := pipe_out.valid
-    // pipe_out.ready := out.ready
-    // out.bits.full_data := pipe_out.bits.full_data
-    // out.bits.data      := pipe_out.bits.resp.data
-    // out.bits.fromDMA   := pipe_out.bits.resp.fromDMA
-    // out.bits.acc_bank_id := pipe_out.bits.resp.acc_bank_id
-    
-    // S0: 그대로
-    val s0 = Pipeline(io.in, 1) // s0: Decoupled[NormalizedOutput]
-
-    // S1/S1'에서 사용할 로컬 payload: resp + full_data + inv_* 를 함께 운반
-    class ActStagePayload[T2 <: Data : Arithmetic, U2 <: Data](fullDataType2: Vec[Vec[T2]], scale_t2: U2) extends Bundle {
-      val resp       = new AccumulatorReadResp(fullDataType2, scale_t2) // data/act/scale/igelu/iexp 등 포함
-      val full_data  = fullDataType2.cloneType                           // 원본 full 데이터 유지
-      val inv_stddev = scale_t2.cloneType
-      val inv_sum_exp= scale_t2.cloneType
-    }
-
-    // ---------- S1: activation만 적용 ----------
-    val s1 = Wire(Decoupled(new ActStagePayload(fullDataType, scale_t)(ev)))
-    s1.valid := s0.valid
-    s0.ready := s1.ready
-
-    val s0_resp         = s0.bits.acc_read_resp
-    val s0_data         = s0_resp.data
-    val s0_act          = s0_resp.act
-    val s0_igelu_qb     = s0_resp.igelu_qb
-    val s0_igelu_qc     = s0_resp.igelu_qc
-    val s0_iexp_qln2    = s0_resp.iexp_qln2
-    val s0_iexp_qln2inv = s0_resp.iexp_qln2_inv
-    val s0_mean         = s0.bits.mean
-    val s0_max          = s0.bits.max
-
-    val activated_data = VecInit(s0_data.map { row =>
-      VecInit(row.map { e =>
-        MuxCase(e, Seq(
-          (has_nonlinear_activations.B && s0_act === Activation.RELU) ->
-            e.relu,
-          (has_nonlinear_activations.B && has_normalizations.B && s0_act === Activation.LAYERNORM) ->
-            (e - s0_mean),
-          (has_nonlinear_activations.B && has_normalizations.B && s0_act === Activation.IGELU) ->
-            AccumulatorScale.igelu(e, s0_igelu_qb, s0_igelu_qc),
-          (has_nonlinear_activations.B && has_normalizations.B && s0_act === Activation.SOFTMAX) ->
-            AccumulatorScale.iexp(e - s0_max, s0_iexp_qln2, s0_iexp_qln2inv, s0_igelu_qb, s0_igelu_qc)
-        ))
-      })
-    })
-
-    s1.bits.resp       := s0_resp
-    s1.bits.resp.data  := activated_data         // 활성화 결과로 교체
-    s1.bits.full_data  := s0_resp.data           // 원본 full-data 유지
-    s1.bits.inv_stddev := s0.bits.inv_stddev.asTypeOf(scale_t)
-    s1.bits.inv_sum_exp:= s0.bits.inv_sum_exp.asTypeOf(scale_t)
-
-    // ---------- S1' : activation→scale 사이 1단 더 ----------
-    val s1p = Pipeline(s1, 1) // s1p: Decoupled[ActStagePayload]
-
-    // ---------- S2: scale + clip ----------
-    val in = Wire(Decoupled(new AccumulatorReadRespWithFullData(fullDataType, scale_t)(ev)))
-    in.valid := s1p.valid
-    s1p.ready := in.ready
-
-    val s1p_resp      = s1p.bits.resp
-    val s1p_act       = s1p_resp.act
-    val s1p_scale     = s1p_resp.scale.asTypeOf(scale_t)
-    val s1p_invStd    = s1p.bits.inv_stddev
-    val s1p_invSumExp = s1p.bits.inv_sum_exp
-
-    val scaledClipped = VecInit(s1p_resp.data.map { row =>
-      VecInit(row.map { e_act =>
-        val scale_sel = MuxCase(s1p_scale, Seq(
-          (has_nonlinear_activations.B && has_normalizations.B && s1p_act === Activation.LAYERNORM) -> s1p_invStd,
-          (has_nonlinear_activations.B && has_normalizations.B && s1p_act === Activation.SOFTMAX)  -> s1p_invSumExp
-        )).asTypeOf(scale_t)
-        val e_scaled  = scale_func(e_act, scale_sel)
-        e_scaled.clippedToWidthOf(rDataType.head.head)
-      })
-    })
-
-    in.bits.resp       := s1p_resp
-    in.bits.resp.data  := scaledClipped
-    in.bits.full_data  := s1p.bits.full_data     // 원본 full-width 데이터 그대로 유지
-
-    // 기존 최종 파이프 유지
     val pipe_out = Pipeline(in, latency)
 
     out.valid := pipe_out.valid
     pipe_out.ready := out.ready
-    out.bits.full_data   := pipe_out.bits.full_data
-    out.bits.data        := pipe_out.bits.resp.data
-    out.bits.fromDMA     := pipe_out.bits.resp.fromDMA
+    out.bits.full_data := pipe_out.bits.full_data
+    out.bits.data      := pipe_out.bits.resp.data
+    out.bits.fromDMA   := pipe_out.bits.resp.fromDMA
     out.bits.acc_bank_id := pipe_out.bits.resp.acc_bank_id
-
   } else {
     val width = acc_read_data.size * acc_read_data(0).size
     val nEntries = 3

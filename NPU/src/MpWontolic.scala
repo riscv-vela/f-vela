@@ -16,7 +16,7 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
 
     val ma_length = meshColumns
     val ma_num = meshRows
-    val mp_ma_num = meshRows * (inputType.getWidth / weightType.getWidth - 1)
+    val mp_ma_num = meshRows * (inputType.getWidth / weightType.getWidth)
 
     val B_MAX_SIZE = scala.math.max(ma_length, ma_num)
 
@@ -99,7 +99,7 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     tag_garbage.make_this_garbage()
 
     //wontolic, mpexeunit에 a, b, d 입력
-    val wontolic = Module(new Wontolic(inputType, outputType, ma_length, ma_num, max_simultaneous_matmuls))
+    // val wontolic = Module(new Wontolic(inputType, outputType, ma_length, ma_num, max_simultaneous_matmuls))
     val mpexeunit = Module(new MpExeUnit(inputType, weightType ,outputType, ma_length, mp_ma_num, max_simultaneous_matmuls))
 
     val a_buf = RegEnable(io.a.bits, io.a.fire)   // fire 때만 io.a.bits → a_buf
@@ -107,42 +107,44 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     val b_buf = RegNext(b_buf_0) 
     val d_buf = RegEnable(io.d.bits, io.d.fire)
 
-    val b_buf_upper_96 = b_buf.asUInt(127, 32).asTypeOf(B_TW_TYPE) // mpexeunit 입력 타입에 맞춰야 함
-    val b_buf_lower_32 = b_buf.asUInt(31, 0).asTypeOf(B_W_TYPE) // wontolic 입력 타입에 맞춰야 함
-    val extended_b_buf_lower_32 = VecInit(b_buf_lower_32.map { chunk =>
-        val chunk_asUInt = chunk.asUInt
-        Cat(Fill(6, chunk_asUInt(1)), chunk_asUInt).asSInt
-    })
+    // val b_buf_upper_96 = b_buf.asUInt(127, 32).asTypeOf(B_TW_TYPE) // mpexeunit 입력 타입에 맞춰야 함
+    // val b_buf_lower_32 = b_buf.asUInt(31, 0).asTypeOf(B_W_TYPE) // wontolic 입력 타입에 맞춰야 함
+    // val extended_b_buf_lower_32 = VecInit(b_buf_lower_32.map { chunk =>
+    //     val chunk_asUInt = chunk.asUInt
+    //     Cat(Fill(6, chunk_asUInt(1)), chunk_asUInt).asSInt
+    // })
 
     val is_mpgemm = req.bits.is_mpgemm
 
     // mpexeunit의 Input
-    mpexeunit.io.in_a := Mux(is_mpgemm, a_buf, 0.U.asTypeOf(A_TYPE))
-    mpexeunit.io.in_b := Mux(is_mpgemm, b_buf_upper_96, 0.U.asTypeOf(B_TW_TYPE))
+    // mpexeunit.io.in_a := Mux(is_mpgemm, a_buf, 0.U.asTypeOf(A_TYPE))
+    // mpexeunit.io.in_b := Mux(is_mpgemm, b_buf.asTypeOf(B_TW_TYPE), 0.U.asTypeOf(B_TW_TYPE))
+    mpexeunit.io.in_a := a_buf
+    mpexeunit.io.in_b := b_buf.asTypeOf(B_TW_TYPE)
     mpexeunit.io.in_d := 0.U.asTypeOf(chiselTypeOf(mpexeunit.io.in_d))
-
+    mpexeunit.io.in_is_mpgemm := is_mpgemm
     // wontolic의 Input
-    // wontolic.io.in_a := Mux(is_mpgemm, 0.U.asTypeOf(A_TYPE), a_buf)
-    wontolic.io.in_a := a_buf
-    when(is_mpgemm){
-        wontolic.io.in_b := extended_b_buf_lower_32.asTypeOf(B_TYPE)
-        wontolic.io.in_b_vec := extended_b_buf_lower_32.asTypeOf(B_TYPE)
-    } .otherwise {
-        wontolic.io.in_b := b_buf
-        wontolic.io.in_b_vec := b_buf
-    }
+
+    // wontolic.io.in_a := a_buf
+    // when(is_mpgemm){
+    //     wontolic.io.in_b := extended_b_buf_lower_32.asTypeOf(B_TYPE)
+    //     wontolic.io.in_b_vec := extended_b_buf_lower_32.asTypeOf(B_TYPE)
+    // } .otherwise {
+    //     wontolic.io.in_b := b_buf
+    //     wontolic.io.in_b_vec := b_buf
+    // }
     
-    wontolic.io.in_d := Mux(is_mpgemm, 0.U.asTypeOf(D_TYPE), d_buf)
+    // wontolic.io.in_d := Mux(is_mpgemm, 0.U.asTypeOf(D_TYPE), d_buf)
 
-    wontolic.io.in_acc := io.req.bits.in_acc
-    wontolic.io.in_preload := io.req.bits.in_preload
+    // wontolic.io.in_acc := io.req.bits.in_acc
+    // wontolic.io.in_preload := io.req.bits.in_preload
 
-    wontolic.io.in_prop.foreach(_ := in_prop)
+    // wontolic.io.in_prop.foreach(_ := in_prop)
 
-    wontolic.io.in_b_transpose := RegNext(req.bits.b_transpose)
-    wontolic.io.in_is_mpgemm := is_mpgemm
+    // wontolic.io.in_b_transpose := RegNext(req.bits.b_transpose)
+    // wontolic.io.in_is_mpgemm := is_mpgemm
 
-    val out_matmul_id: UInt = wontolic.io.out_id.head
+    val out_matmul_id: UInt = mpexeunit.io.out_id.head
 
     tagq.io.deq.ready := io.resp.valid && io.resp.bits.last && out_matmul_id === tagq.io.deq.bits.id
 
@@ -181,26 +183,26 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
     io.b.ready := !b_written || input_next_row_into_spatial_array || io.req.ready
     io.d.ready := !d_written || input_next_row_into_spatial_array || io.req.ready
 
-    wontolic.io.in_fire_counter := RegNext(fire_counter)
+    // wontolic.io.in_fire_counter := RegNext(fire_counter)
 
     //pause 로 valid신호 만들어서 wontolic의 각 pe에 전파
     val pause = !req.valid || !input_next_row_into_spatial_array
     val not_paused_vec = VecInit(Seq.fill(ma_length)(!pause))
-    wontolic.io.in_valid := not_paused_vec
+    // wontolic.io.in_valid := not_paused_vec
 
     val matmul_last_vec = VecInit(Seq.fill(ma_length)(last_fire))
-    wontolic.io.in_last := matmul_last_vec
+    // wontolic.io.in_last := matmul_last_vec
 
     val matmul_id_vec = VecInit(Seq.fill(meshColumns)(matmul_id))
-    wontolic.io.in_id := matmul_id_vec
+    // wontolic.io.in_id := matmul_id_vec
 
-    mpexeunit.io.in_valid := Mux(is_mpgemm, not_paused_vec, VecInit(Seq.fill(ma_length)(false.B)))
-    mpexeunit.io.in_last := Mux(is_mpgemm, matmul_last_vec, VecInit(Seq.fill(ma_length)(false.B)))
+    // mpexeunit.io.in_valid := not_paused_vec
+    mpexeunit.io.in_valid.foreach(_ := !pause) // TODO: pause 신호 만들어서 전파
+    mpexeunit.io.in_last.foreach(_ := last_fire)
     mpexeunit.io.in_id := matmul_id_vec
-    mpexeunit.io.in_acc := io.req.bits.in_acc
-    mpexeunit.io.in_preload := io.req.bits.in_preload
     mpexeunit.io.in_prop.foreach(_ := in_prop)
     mpexeunit.io.in_fire_counter :=  RegNext(fire_counter)
+    mpexeunit.io.in_b_transpose := RegNext(req.bits.b_transpose)
 
     io.resp.bits.total_rows := Mux(total_rows_q.io.deq.valid && out_matmul_id === total_rows_q.io.deq.bits.id,
         total_rows_q.io.deq.bits.total_rows, ma_length.U)
@@ -209,12 +211,13 @@ class WontolicWithDelays[T <: Data: Arithmetic, U <: TagQueueTag with Data]
 
 
     //output 연결
-    io.resp.bits.data := Cat(mpexeunit.io.out_c.asUInt, wontolic.io.out_c.asUInt).asTypeOf(io.resp.bits.data.cloneType)
-    io.resp.valid := wontolic.io.out_valid.head
-    io.resp.bits.last := wontolic.io.out_last.head
+    // io.resp.bits.data := Cat(mpexeunit.io.out_c.asUInt, wontolic.io.out_c.asUInt).asTypeOf(io.resp.bits.data.cloneType)
+    io.resp.bits.data := mpexeunit.io.out_c.asUInt.asTypeOf(io.resp.bits.data.cloneType)
+    io.resp.valid := mpexeunit.io.out_valid.head
+    io.resp.bits.last := mpexeunit.io.out_last.head
     io.resp.bits.tag := Mux(tagq.io.deq.valid && out_matmul_id === tagq.io.deq.bits.id, tagq.io.deq.bits.tag, tag_garbage)
     io.tags_in_progress := VecInit(tagq.io.all.map(_.tag))
-    io.resp.bits.is_mpgemm := wontolic.io.out_is_mpgemm
+    io.resp.bits.is_mpgemm := mpexeunit.io.out_is_mpgemm
 
 
     when (reset.asBool) {

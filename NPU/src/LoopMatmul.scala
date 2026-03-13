@@ -23,6 +23,7 @@ class LoopMatmulLdAReq(val block_size: Int, val coreMaxAddrBits: Int, val iterat
   val addr_start = UInt(log2Up(max_addr).W)
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val is_resadd = Bool()
+  val mpgemm_transpose = Bool()
 }
 
 class LoopMatmulLdA(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_addr: Int, input_w: Int,
@@ -102,8 +103,29 @@ class LoopMatmulLdA(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: In
     val i_blocks = Mux(req.transpose, max_blocks, 1.U)
     val k_blocks = Mux(req.transpose, 1.U, max_blocks)
 
-    val next_i = floorAdd(i, i_blocks, req.max_i)
-    val next_k = floorAdd(k, k_blocks, req.max_k, next_i === 0.U)
+    // val next_i = floorAdd(i, i_blocks, req.max_i)
+    // val next_k = floorAdd(k, k_blocks, req.max_k, next_i === 0.U)
+
+    val next_i = Wire(UInt(iterator_bitwidth.W))
+    val next_k = Wire(UInt(iterator_bitwidth.W))
+
+    when (req.mpgemm_transpose) {
+      // 🔹 mpgemm: k가 innermost, i가 outermost
+      //   for (i) for (k) 형태
+      val next_k_kfirst = floorAdd(k, k_blocks, req.max_k)
+      val next_i_kfirst = floorAdd(i, i_blocks, req.max_i, next_k_kfirst === 0.U)
+
+      next_k := next_k_kfirst
+      next_i := next_i_kfirst
+    } .otherwise {
+      // 🔹 기본 모드: 기존 동작 유지 (i가 innermost)
+      //   for (k) for (i)
+      val next_i_default = floorAdd(i, i_blocks, req.max_i)
+      val next_k_default = floorAdd(k, k_blocks, req.max_k, next_i_default === 0.U)
+
+      next_i := next_i_default
+      next_k := next_k_default
+    }
 
     i := next_i
     k := next_k
@@ -134,6 +156,7 @@ class LoopMatmulLdBReq(val block_size: Int, val coreMaxAddrBits: Int, val iterat
   val addr_end = UInt(log2Up(max_addr+1).W)
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val is_resadd = Bool()
+  val mpgemm_transpose = Bool()
 }
 
 class LoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_addr: Int, input_w: Int,
@@ -217,8 +240,27 @@ class LoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: In
     val j_blocks = Mux(req.transpose, 1.U, max_blocks)
     val k_blocks = Mux(req.transpose, max_blocks, 1.U)
 
-    val next_j = floorAdd(j, j_blocks, req.max_j)
-    val next_k = floorAdd(k, k_blocks, req.max_k, next_j === 0.U)
+    // val next_j = floorAdd(j, j_blocks, req.max_j)
+    // val next_k = floorAdd(k, k_blocks, req.max_k, next_j === 0.U)
+
+    val next_j = Wire(UInt(iterator_bitwidth.W))
+    val next_k = Wire(UInt(iterator_bitwidth.W))
+
+    when (req.mpgemm_transpose) {
+      // 🔹 mpgemm_transpose: k가 innermost, j가 outermost
+      val next_k_kfirst = floorAdd(k, k_blocks, req.max_k)
+      val next_j_kfirst = floorAdd(j, j_blocks, req.max_j, next_k_kfirst === 0.U)
+
+      next_k := next_k_kfirst
+      next_j := next_j_kfirst
+    } .otherwise {
+      // 🔹 기본 모드: 기존 동작 유지 (j innermost)
+      val next_j_default = floorAdd(j, j_blocks, req.max_j)
+      val next_k_default = floorAdd(k, k_blocks, req.max_k, next_j_default === 0.U)
+
+      next_j := next_j_default
+      next_k := next_k_default
+    }
 
     j := next_j
     k := next_k
@@ -384,6 +426,8 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
 
   val req = Reg(new LoopMatmulExecuteReq(block_size, coreMaxAddrBits, iterator_bitwidth, max_addr, max_acc_addr, concurrent_loops))
 
+  val mpgemm_transpose = req.is_mpgemm && req.b_transpose
+
   val c_addr_start = /*(BigInt(1) << 31).U |*/ req.c_addr_start
   val b_addr_start = req.b_addr_end - req.max_k * req.max_j * block_size.U
 
@@ -422,7 +466,7 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   pre_cmd_rs1 := DontCare
   pre_cmd_rs1.num_rows := b_rows.asUInt
   pre_cmd_rs1.num_cols := b_cols.asUInt
-  pre_cmd_rs1.local_addr := Mux(i === 0.U, cast_to_sp_addr(pre_cmd_rs1.local_addr, b_addr),
+  pre_cmd_rs1.local_addr := Mux( mpgemm_transpose || (i === 0.U) , cast_to_sp_addr(pre_cmd_rs1.local_addr, b_addr),
     garbage_addr(pre_cmd_rs1.local_addr))
 
   val pre_cmd_rs2 = Wire(preload_rs2_t.cloneType)
@@ -437,7 +481,7 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
 
   val comp_cmd = Wire(new RoCCCommand())
   comp_cmd := DontCare
-  comp_cmd.inst.funct := Mux(i === 0.U, COMPUTE_AND_FLIP_CMD, COMPUTE_AND_STAY_CMD)
+  comp_cmd.inst.funct := Mux( mpgemm_transpose || (i === 0.U), COMPUTE_AND_FLIP_CMD, COMPUTE_AND_STAY_CMD)
 
   val comp_cmd_rs1 = Wire(compute_rs1_t.cloneType)
   comp_cmd_rs1 := DontCare
@@ -462,8 +506,21 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   io.idle := state === idle
 
   // The order here is k, j, i
-  val lda_ahead = io.lda_completed || io.ld_ka > k || (io.ld_ka === k && io.ld_i > i)
-  val ldb_ahead = io.ldb_completed || io.ld_kb > k || (io.ld_kb === k && io.ld_j > j)
+  // val lda_ahead = io.lda_completed || io.ld_ka > k || (io.ld_ka === k && io.ld_i > i)
+  // val ldb_ahead = io.ldb_completed || io.ld_kb > k || (io.ld_kb === k && io.ld_j > j)
+
+  val lda_ahead = io.lda_completed || Mux(mpgemm_transpose,
+    // mpgemm: (i, k) 순서로 앞서 있는지?
+    (io.ld_i  > i) || (io.ld_i === i  && io.ld_ka > k),
+    // 기본: (k, i) 순서로 앞서 있는지?
+    (io.ld_ka > k) || (io.ld_ka === k && io.ld_i  > i)
+  )
+  val ldb_ahead = io.ldb_completed || Mux(mpgemm_transpose,
+    // mpgemm: (j, k) 순서
+    (io.ld_j  > j) || (io.ld_j === j  && io.ld_kb > k),
+    // 기본: (k, j) 순서
+    (io.ld_kb > k) || (io.ld_kb === k && io.ld_j  > j)
+  )
   val ldd_ahead = io.ldd_completed
   val ld_ahead = lda_ahead && ldb_ahead && ldd_ahead
 
@@ -478,9 +535,24 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
     when (state === pre) {
       state := comp
     }.otherwise {
-      val next_i = floorAdd(i, 1.U, req.max_i)
-      val next_j = floorAdd(j, 1.U, req.max_j, next_i === 0.U)
-      val next_k = floorAdd(k, 1.U, req.max_k, next_j === 0.U && next_i === 0.U)
+      // val next_i = floorAdd(i, 1.U, req.max_i)
+      // val next_j = floorAdd(j, 1.U, req.max_j, next_i === 0.U)
+      // val next_k = floorAdd(k, 1.U, req.max_k, next_j === 0.U && next_i === 0.U)
+
+      // 기본 모드: i -> j -> k 순(현재 동작 유지)
+      val next_i_ijk = floorAdd(i, 1.U, req.max_i)
+      val next_j_ijk = floorAdd(j, 1.U, req.max_j, next_i_ijk === 0.U)
+      val next_k_ijk = floorAdd(k, 1.U, req.max_k, next_j_ijk === 0.U && next_i_ijk === 0.U)
+
+      // mpgemm 모드: k -> j -> i 순 (k가 가장 빨리 도는 루프)
+      val next_k_kji = floorAdd(k, 1.U, req.max_k)
+      val next_j_kji = floorAdd(j, 1.U, req.max_j, next_k_kji === 0.U)
+      val next_i_kji = floorAdd(i, 1.U, req.max_i, next_k_kji === 0.U && next_j_kji === 0.U)
+
+      // is_mpgemm에 따라 어떤 순서를 쓸지 선택
+      val next_i = Mux(mpgemm_transpose, next_i_kji, next_i_ijk)
+      val next_j = Mux(mpgemm_transpose, next_j_kji, next_j_ijk)
+      val next_k = Mux(mpgemm_transpose, next_k_kji, next_k_ijk)
 
       k := next_k
       j := next_j
@@ -516,6 +588,7 @@ class LoopMatmulStCReq(val block_size: Int, val coreMaxAddrBits: Int, val iterat
   val addr_start = UInt(log2Up(max_acc_addr).W)
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val is_resadd = Bool()
+  val mpgemm_transpose = Bool()
 }
 
 class LoopMatmulStC(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_acc_addr: Int, input_w: Int, acc_w: Int, max_block_len: Int, concurrent_loops: Int, mvout_rs2_t: MvoutRs2)
@@ -631,11 +704,22 @@ class LoopMatmulStC(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: In
   io.idle := state === idle
 
   // The order here is k, j, i when not doing LAYERNORM or SOFTMAX
-  val ex_ahead = WireInit(io.ex_completed ||
+  val ex_ahead_default = io.ex_completed ||
     ((req.act =/= Activation.LAYERNORM) && (req.act =/= Activation.SOFTMAX) &&
       (io.ex_k === req.max_k - 1.U &&
         (io.ex_j >= j + blocks ||
-          ((io.ex_j === j + blocks - 1.U) && io.ex_i > i)))))
+          ((io.ex_j === j + blocks - 1.U) && io.ex_i > i))))
+  val ex_ahead_default_kfirst = io.ex_completed ||
+    ((req.act =/= Activation.LAYERNORM) && (req.act =/= Activation.SOFTMAX) &&
+      (
+        // 순서: (i, j, k) 기준으로 (i, j_end, max_k-1)를 넘어섰는지?
+        (io.ex_i > i) ||
+        (io.ex_i === i && (
+          (io.ex_j > j + blocks - 1.U ) 
+          // || (io.ex_j === j + blocks - 1.U && io.ex_k >= req.max_k - 1.U)
+        ))
+      ))
+  val ex_ahead = WireInit(Mux(req.mpgemm_transpose, ex_ahead_default_kfirst,  ex_ahead_default))
   when(req.is_resadd){
     ex_ahead := io.ex_completed || (io.ex_i > i || (io.ex_i === i && io.ex_j >= j + blocks))
   }
@@ -977,6 +1061,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ldA.io.req.bits.addr_start := Mux(loop_requesting_ldA.a_ex_spad_id === 0.U, loop_requesting_ldA.a_addr_start, (loop_requesting_ldA.a_ex_spad_id - 1.U) * (max_addr / concurrent_loops).U)
   ldA.io.req.bits.loop_id := loop_requesting_ldA_id
   ldA.io.req.bits.is_resadd := is_resadd
+  ldA.io.req.bits.mpgemm_transpose := loop_requesting_ldA.is_mpgemm && loop_requesting_ldA.b_transpose
 
   ldA.io.req.valid := !loop_requesting_ldA.lda_started && loop_requesting_ldA.configured
 
@@ -993,10 +1078,11 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ldB.io.req.bits.pad_k := Mux(is_resadd, loop_requesting_ldB.pad_i, loop_requesting_ldB.pad_k)
   ldB.io.req.bits.dram_addr := loop_requesting_ldB.b_dram_addr
   ldB.io.req.bits.dram_stride := loop_requesting_ldB.b_dram_stride
-  ldB.io.req.bits.transpose := loop_requesting_ldB.b_transpose
+  ldB.io.req.bits.transpose := loop_requesting_ldB.b_transpose 
   ldB.io.req.bits.addr_end := Mux(loop_requesting_ldB.b_ex_spad_id === 0.U, loop_requesting_ldB.b_addr_end, (loop_requesting_ldB.b_ex_spad_id) * (max_addr / concurrent_loops).U)
   ldB.io.req.bits.loop_id := loop_requesting_ldB_id
   ldB.io.req.bits.is_resadd := is_resadd
+  ldB.io.req.bits.mpgemm_transpose := loop_requesting_ldB.is_mpgemm && loop_requesting_ldB.b_transpose
 
   ldB.io.req.valid := !loop_requesting_ldB.ldb_started && loop_requesting_ldB.configured
 
@@ -1072,7 +1158,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   stC.io.req.bits.addr_start := st_c_addr_start
   stC.io.req.bits.loop_id := loop_requesting_st_id
   stC.io.req.bits.is_resadd := is_resadd
-
+  stC.io.req.bits.mpgemm_transpose := loop_requesting_st.is_mpgemm && loop_requesting_st.b_transpose
 
   stC.io.req.valid := !loop_requesting_st.st_started && loop_requesting_st.ex_started && loop_requesting_st.configured
 

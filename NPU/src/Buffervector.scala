@@ -49,6 +49,4 @@ class Buffvector[T <: Data : Arithmetic](inputType: T, max_simultaneous_matmuls:
     io.out_id := RegNext(io.in_id)
     io.out_prop := RegNext(io.in_prop)
 
-
-    
 }
