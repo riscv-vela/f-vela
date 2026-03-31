@@ -1,0 +1,17 @@
+*.md
+
+# Ignore generated files and folders
+third_party/
+build/
+out/
+
+# linked folder
+_link/
+
+# Generated files
+*.log
+*.rpt
+bin/
+tmp/
+*.tmp
+*.Identifier

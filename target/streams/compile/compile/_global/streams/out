@@ -1,0 +1,305 @@
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Arithmetic.scala:55:27: Implicit definition should have explicit type (inferred f_vela_gemmini.ArithmeticOps[chisel3.UInt]) [quickfixable][0m
+[0m[[0m[33mwarn[0m] [0m[0m    override implicit def cast(self: UInt) = new ArithmeticOps(self) {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Arithmetic.scala:92:27: Implicit definition should have explicit type (inferred f_vela_gemmini.ArithmeticOps[chisel3.SInt]) [quickfixable][0m
+[0m[[0m[33mwarn[0m] [0m[0m    override implicit def cast(self: SInt) = new ArithmeticOps(self) {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Arithmetic.scala:526:27: Implicit definition should have explicit type (inferred f_vela_gemmini.ArithmeticOps[f_vela_gemmini.DummySInt]) [quickfixable][0m
+[0m[[0m[33mwarn[0m] [0m[0m    override implicit def cast(self: DummySInt) = new ArithmeticOps(self) {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Controller.scala:69:16: Implicit definition should have explicit type (inferred freechips.rocketchip.tilelink.TLEdgeOut) [quickfixable][0m
+[0m[[0m[33mwarn[0m] [0m[0m  implicit val edge = outer.spad.id_node.edges.out.head[0m
+[0m[[0m[33mwarn[0m] [0m[0m               ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:14:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:16:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:24:17: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val ror, rol, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m                ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:28:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:30:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:10: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:13: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:43:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:43:10: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:47:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:49:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:51:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:51:10: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:55:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:57:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:59:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:61:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:65:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:13: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:76:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:13: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:80:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:82:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:84:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:84:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:15: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m              ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:26: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m                         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:36: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                   ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:39: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:42: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/DCEQueue.scala:21:27: reference to entries is ambiguous;[0m
+[0m[[0m[33mwarn[0m] [0m[0mit is both defined in the enclosing class DCEQueue and inherited in the enclosing anonymous class as value entries (defined in class QueueIO)[0m
+[0m[[0m[33mwarn[0m] [0m[0mIn Scala 2, symbols inherited from a superclass shadow symbols defined in an outer scope.[0m
+[0m[[0m[33mwarn[0m] [0m[0mSuch references are ambiguous in Scala 3. To continue using the inherited symbol, write `this.entries`.[0m
+[0m[[0m[33mwarn[0m] [0m[0mOr use `-Wconf:msg=legacy-binding:s` to silence this warning. [quickfixable][0m
+[0m[[0m[33mwarn[0m] [0m[0m    val peek = Output(Vec(entries, Valid(gen)))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:259:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:274:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:286:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:298:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:312:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      int_gemmini = LazyModule(new Gemmini(GemminiConfigs.chipConfig.copy([0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:321:20: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      fp_gemmini = LazyModule(new Gemmini(GemminiFPConfigs.BF16DefaultConfig.copy([0m
+[0m[[0m[33mwarn[0m] [0m[0m                   ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Configs.scala:337:7: value InModuleBody in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      InModuleBody {[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:143:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:144:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(GemminiFPConfigs.FP32DefaultConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:155:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:167:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:168:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(GemminiFPConfigs.FP16DefaultConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:178:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:179:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(GemminiFPConfigs.BF16DefaultConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:188:35: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                  ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:189:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(GemminiFPConfigs.BF16DefaultConfig.copy([0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:203:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/ConfigsFP.scala:204:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(GemminiFPConfigs.BF16Default8Config))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Controller.scala:37:14: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val spad = LazyModule(new Scratchpad(config))[0m
+[0m[[0m[33mwarn[0m] [0m[0m             ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Controller.scala:277:82: method zipped in class Ops is deprecated (since 2.13.0): Use xs.lazyZip(ys).lazyZip(zs)[0m
+[0m[[0m[33mwarn[0m] [0m[0m  (ex_controller.io.srams.read, im2col.io.sram_reads, spad.module.io.srams.read).zipped.foreach { case (ex_read, im2col_read, spad_read) =>[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                                                 ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/CustomConfigs.scala:63:21: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      val gemmini = LazyModule(new Gemmini(gemminiConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:55:52: type LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m                  (implicit p: Parameters) extends LazyModule {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                   ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:56:14: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val core = LazyModule(new StreamReaderCore(config, nXacts, beatBits, maxBytes, spadWidth, accWidth, aligned_to, spad_rows, acc_rows, meshRows, use_tlb_register_filter, use_firesim_simulation_counters))[0m
+[0m[[0m[33mwarn[0m] [0m[0m             ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:60:22: type LazyModuleImp in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m  class Impl extends LazyModuleImp(this) {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                     ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:129:67: type LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                 (implicit p: Parameters) extends LazyModule {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                                  ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:130:61: method apply in object TLClientParameters is deprecated: Use TLMasterParameters.v1 instead of TLClientParameters[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val node = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters([0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:138:22: type LazyModuleImp in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m  class Impl extends LazyModuleImp(this) with HasCoreParameters with MemoryOpConstants {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                     ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:332:16: method apply in object SynthesizePrintf is deprecated (since FireSim 1.14): This method will be removed. Annotate the printf statement directly[0m
+[0m[[0m[33mwarn[0m] [0m[0m        printf(SynthesizePrintf("RDMA bytes rec: %d\n", total_bytes_read))[0m
+[0m[[0m[33mwarn[0m] [0m[0m               ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:353:52: type LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m                  (implicit p: Parameters) extends LazyModule {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                   ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:354:61: method apply in object TLClientParameters is deprecated: Use TLMasterParameters.v1 instead of TLClientParameters[0m
+[0m[[0m[33mwarn[0m] [0m[0m  val node = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters([0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:360:22: type LazyModuleImp in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m  class Impl extends LazyModuleImp(this) with HasCoreParameters with MemoryOpConstants {[0m
+[0m[[0m[33mwarn[0m] [0m[0m                     ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:643:16: method apply in object SynthesizePrintf is deprecated (since FireSim 1.14): This method will be removed. Annotate the printf statement directly[0m
+[0m[[0m[33mwarn[0m] [0m[0m        printf(SynthesizePrintf("WDMA bytes sent: %d\n", total_bytes_sent))[0m
+[0m[[0m[33mwarn[0m] [0m[0m               ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DMA.scala:644:16: method apply in object SynthesizePrintf is deprecated (since FireSim 1.14): This method will be removed. Annotate the printf statement directly[0m
+[0m[[0m[33mwarn[0m] [0m[0m        printf(SynthesizePrintf("WDMA total latency: %d\n", total_latency))[0m
+[0m[[0m[33mwarn[0m] [0m[0m               ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:119:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:120:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.baseConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:130:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:131:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.wsOnlyConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:141:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:142:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.bothDataflowsConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:152:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:153:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.highBitwidthConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:163:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:164:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.largerDimConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:174:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:175:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.fullyCombinationalConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:185:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:186:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.moreMemoryConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:196:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:197:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.moreBanksConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:207:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:208:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.narrowerBusConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:218:35: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                  ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:219:7: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      LazyModule(new Gemmini(DSEConfigs.pnr16Config))[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:229:35: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                  ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:230:7: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m      LazyModule(new Gemmini(DSEConfigs.pnr32Config))[0m
+[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:240:37: type ValName in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        implicit val v = implicitly[ValName][0m
+[0m[[0m[33mwarn[0m] [0m[0m                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/DSEConfigs.scala:241:9: value LazyModule in package diplomacy is deprecated (since rocketchip 2.0.0): Diplomacy has been split to a standalone library[0m
+[0m[[0m[33mwarn[0m] [0m[0m        LazyModule(new Gemmini(DSEConfigs.baseConfig))[0m
+[0m[[0m[33mwarn[0m] [0m[0m        ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Pipeline.scala:29:49: method zipped in class Ops is deprecated (since 2.13.0): Use xs.lazyZip(ys).lazyZip(zs)[0m
+[0m[[0m[33mwarn[0m] [0m[0m    (stalling.init, stalling.tail, valids.init).zipped.foreach { case (s1, s2, v1) =>[0m
+[0m[[0m[33mwarn[0m] [0m[0m                                                ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m100 warnings found[0m
