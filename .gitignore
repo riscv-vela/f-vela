@@ -1,9 +1,9 @@
-*.md
-
 # Ignore generated files and folders
 third_party/
 build/
 out/
+llama/
+md/
 
 # linked folder
 _link/
