@@ -49,6 +49,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# SBT 메모리 및 GC 옵션 추가
+# -Xmx12G: 최대 메모리를 12GB로 증설
+# -Xss16M: 스택 크기를 늘려 복잡한 Chisel 코드 대응
+# -XX:+UseG1GC: 효율적인 쓰레기 수집 알고리즘 사용
+export JAVA_TOOL_OPTIONS="-Xmx12G -Xss16M -XX:+UseG1GC"
+echo "Java memory options set to: $JAVA_TOOL_OPTIONS"
+
 # source env.sh to set up environment variables. This is needed to get VERILATOR_ROOT and other variables that the Makefile relies on.
 if [ -f "$CHIPYARD_DIR/env.sh" ]; then
     source "$CHIPYARD_DIR/env.sh"

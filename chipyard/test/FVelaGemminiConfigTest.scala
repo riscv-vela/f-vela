@@ -25,10 +25,6 @@ class FVelaGemminiConfigTest extends Config(
 
 
 
-
-
-
-
 // package chipyard.config
 // import org.chipsalliance.cde.config.Config
 // import chipyard._              // 메인 패키지 참조

@@ -4,9 +4,10 @@ build/
 out/
 llama/
 md/
+target/
 
 # linked folder
-_link/
+_link/*
 
 # Generated files
 *.log

@@ -56,6 +56,8 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 	val vsissq = Module(new IssueQueue(vParams.vsissqEntries, 1))
 	val vpissq = Module(new IssueQueue(vParams.vpissqEntries, 2)) // permute/reduction
 	val vxissqs = xissParams.map(q => Module(new IssueQueue(q.depth, q.seqs.size)).suggestName(s"vxissq_${q.name}"))
+	val vcissq = Module(new IssueQueue(2, 1)) // @@ Custom Issue Queue (PID unit) 
+
 
 	val vxus = xissParams.map(_.seqs.map(s => Module(new ExecutionUnit(s.fus, s.name)).suggestName(s"vxu${s.name}")))
 	val flat_vxus = vxus.flatten
@@ -68,8 +70,11 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		Module(new ExecuteSequencer(s.insns, maxPipeDepth, s.fus.size)).suggestName(s"vxs${s.name}")
 	))
 
-	val allSeqs = Seq(vls, vss, vps) ++ vxs.flatten
-	val allIssQs = Seq(vlissq, vsissq, vpissq) ++ vxissqs
+	val vcs = Module(new CustomSequencer(Seq(VFPID64B, VFPID32B), maxPipeDepth)).suggestName("vcs") // @@ Custom Sequencer VCS (PID unit)
+	val vcu = Module(new CustomExecutionUnit).suggestName("vcu") // @@ Custom Execution Unit (PID unit) 
+
+	val allSeqs = Seq(vls, vss, vps, vcs) ++ vxs.flatten // @@ Custom Sequencer VCS 추가
+	val allIssQs = Seq(vlissq, vsissq, vpissq, vcissq) ++ vxissqs // @@ Custom Issue Queue vcissq 추가
 
 	val flat_vxs = vxs.flatten
 	require(flat_vxs.size == flat_vxus.size)
@@ -95,6 +100,7 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		IssueGroup(vlissq, Seq(vls)),
 		IssueGroup(vsissq, Seq(vss)),
 		IssueGroup(vpissq, Seq(vps)),
+		IssueGroup(vcissq, Seq(vcs)) // @@ Custom Issue Group 추가 
 	) ++ (vxissqs.zip(vxs).map { case (q, seqs) =>
 		IssueGroup(q, seqs)
 	})
@@ -119,16 +125,16 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		issq.io.enq.bits.scalar_to_vd0 := false.B
 		issq.io.enq.bits.rs1_is_rs2 := false.B
 
-		// yookyung_generate
-		issq.io.enq.bits.reads_scalar1 := false.B   // Custom: no scalar by default
+		issq.io.enq.bits.reads_scalar1 := false.B   // ## RoPE Flag - Custom: no scalar by default
+		issq.io.enq.bits.pid_flag := false.B // @@ pid flag 
 	}
 
 	val dis_ctrl = Wire(new VectorDecodedControl(all_supported_insns, Seq(
 		Reduction, Wide2VD, Wide2VS2, WritesAsMask,
 		ReadsVS1AsMask, ReadsVS2AsMask, ReadsVS1, ReadsVS2, ReadsVD,
 		VMBitReadsVM, AlwaysReadsVM, WritesVD, WritesScalar, ScalarToVD0, 
-		// yookyung_modify
-		ReadsScalar1  // Custom: rs1(m, idx)
+		// ## RoPE Custom Flags
+		ReadsScalar1  // ## RoPE Custom: rs1(m, idx) 
 	))).decode(vdq.io.deq.bits)
 
 	// Load sequencer
@@ -164,8 +170,8 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		vxissq.io.enq.bits.scalar_to_vd0 := dis_ctrl.bool(ScalarToVD0)
 		vxissq.io.enq.bits.reduction := dis_ctrl.bool(Reduction)
 		
-		// yookyung_generate
-		vxissq.io.enq.bits.reads_scalar1 := dis_ctrl.bool(ReadsScalar1)   // Custom: rs1(m, idx)
+		// ## RoPE Custom: rs1(m, idx)
+		vxissq.io.enq.bits.reads_scalar1 := dis_ctrl.bool(ReadsScalar1)   // ## RoPE Custom: rs1(m, idx)
 	}
 
 	// ======================================
@@ -225,12 +231,23 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 			val older_same_pipe_writes = same_vxu.map(_.io.pipe_hazards.toSeq.map { h =>
 				Mux(h.valid && h.bits.vat =/= vat, h.bits.eg_oh, 0.U)
 			}.reduce(_|_)).getOrElse(0.U)
-			val older_pipe_writes = older_other_pipe_writes | older_same_pipe_writes
+			
+			//TODO RoPE Unit Hazards Check 추가.
+			//
+
+			//@@ PID unit은 모든 VXU와 hazard가 발생할 수 있으므로, same_vxu의 hazard도 모두 고려해야 함
+			val vcu_pipe_mask_now = vcu.io.pipe_hazards.toSeq.map { h =>
+				Mux(h.valid, h.bits.eg_oh, 0.U)
+			}.foldLeft(0.U(egsTotal.W))(_|_) 
+			val older_vcu_pipe_writes = RegNext(vcu_pipe_mask_now, 0.U(egsTotal.W)) // @@ PID unit의 pipe hazard는 1사이클 뒤에 발생하므로, 레지스터로 1사이클 지연시켜서 체크해야 함
+		
+			// val older_pipe_writes = older_other_pipe_writes | older_same_pipe_writes
+			val older_pipe_writes = older_other_pipe_writes | older_same_pipe_writes | older_vcu_pipe_writes //@@ PID unit hazard 추가
 
 			val older_iter_writes = flat_vxus.map(_.io.iter_hazards.toSeq).flatten.map { h =>
 				Mux(h.valid, h.bits.eg_oh, 0.U)
-			}.reduce(_|_)
-
+			}.foldLeft(0.U)(_|_) // modify .reduce(_|_) --> .foldLeft(0.U)(_|_) ... to handle empty case
+			
 			seq.io.older_writes := older_pipe_writes | older_iter_writes | older_wintents
 			seq.io.older_reads := older_rintents
 
@@ -266,7 +283,7 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 	// ======================================
 	// Connect reads to VRF
 
-	val vrf = Module(new RegisterAccess(flat_vxs.size, maxPipeDepth))
+	val vrf = Module(new RegisterAccess(flat_vxs.size + 1, maxPipeDepth)) // @@ RoPE Unit, Pid Unit ports 추가 (+2)
 	vrf.io.vls.rvm.req <> vls.io.rvm
 	vrf.io.vss.rvd.req <> vss.io.rvd
 	vrf.io.vss.rvm.req <> vss.io.rvm
@@ -381,6 +398,36 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		assert(io.vmu.lresp.bits.debug_id === vls.io.iss.bits.debug_id)
 	}
 
+	// TODO RoPE Unit의 write도 VRF로 들어가야 함. 현재는 VCS의 write port를 사용한다고 가정하고, VCS의 write port를 flat_vxus 뒤에 연결.
+
+	/* @@@ PID Unit Port 와 VRF 연결 @@@ 
+	* 
+	*/
+	val CustomIdx = flat_vxs.size // @@ PID Unit Port는 마지막에 연결 
+	vrf.io.vxs(CustomIdx).rvs1.req.valid := false.B
+	vrf.io.vxs(CustomIdx).rvd.req.valid  := false.B
+	vrf.io.vxs(CustomIdx).rvm.req.valid  := false.B
+	vrf.io.vxs(CustomIdx).rvs1.req.bits := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvs1.req.bits)
+	vrf.io.vxs(CustomIdx).rvd.req.bits  := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvd.req.bits)
+	vrf.io.vxs(CustomIdx).rvm.req.bits  := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvm.req.bits)
+	vrf.io.iter_writes(CustomIdx).valid := false.B
+	vrf.io.iter_writes(CustomIdx).bits := 0.U.asTypeOf(vrf.io.iter_writes(CustomIdx).bits)
+
+	/* 읽기 */
+	// Sequencer 의 rvs2 요청(rvs2.req) 을 VRF에 직접 연결
+	vrf.io.vxs(CustomIdx).rvs2.req <> vcs.io.read_req
+
+	val rvs2_data = vrf.io.vxs(CustomIdx).rvs2.resp
+	vcu.io.rvs2_data := rvs2_data
+
+	// micro op와 데이터가 "같은 사이클에 같이" vcu로 들어가도록 핸드셰이크 맞춤
+	vcu.io.iss.valid := vcs.io.iss.valid
+	vcu.io.iss.bits.viewAsSupertype(new CustomExecuteMicroOp) := vcs.io.iss.bits
+	vcs.io.iss.ready := vcu.io.iss.ready
+
+	/* 쓰기 */
+	vrf.io.vxs(CustomIdx).pipe_write_req <> vcs.io.pipe_write_req
+	vrf.io.pipe_writes(CustomIdx)        <> vcu.io.pipe_write
 
 	// ========================================
 	// Connect frontend index/mask access ports
@@ -395,6 +442,10 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		h.valid && h.bits.eg === index_access_eg
 	} ++ vxus.flatten.map(_.io.iter_hazards).flatten.map { h =>
 		h.valid && h.bits.eg === index_access_eg
+
+	} ++ vcu.io.pipe_hazards.toSeq.map { h =>  // @ PID VCU Hazard Check
+    	h.valid && h.bits.eg === index_access_eg
+
 	}).orR ||
 		vdq.io.peek.map(i => i.valid && !(i.bits.vmu && i.bits.store)).orR
 	)
@@ -507,16 +558,33 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 
 	// Clear the age tags
 	var r_idx = 0
+	
+	// @@ clearVat 호출 후 남은 포트를 명시적으로 무효화
+  	for (i <- 0 until nRelease) {
+    	io.vat_release(i).valid := false.B
+    	io.vat_release(i).bits := 0.U
+  	}
 	def clearVat(fire: Bool, tag: UInt) = {
-		assert(r_idx < nRelease)
+		require(r_idx < nRelease) // junseok_modify
 		io.vat_release(r_idx).valid := fire
 		io.vat_release(r_idx).bits := tag
 		r_idx += 1
 	}
 
+	// def clearVat(fire: Bool, tag: UInt) = {
+	// 	assert(r_idx < nRelease)
+	// 	io.vat_release(r_idx).valid := fire
+	// 	io.vat_release(r_idx).bits := tag
+	// 	r_idx += 1
+	// }
+
 	clearVat(vls.io.iss.fire && vls.io.iss.bits.tail, vls.io.iss.bits.vat)
 	clearVat(vss.io.iss.fire && vss.io.iss.bits.tail, vss.io.iss.bits.vat)
 	vxs.flatten.foreach(xs => clearVat(xs.io.iss.fire && xs.io.iss.bits.tail, xs.io.iss.bits.vat))
+
+	// @@ vcu clearing age tag
+  	clearVat(vcs.io.iss.fire && vcs.io.iss.bits.tail, vcs.io.iss.bits.vat)
+  	require(r_idx == nRelease, s"vat_release fanout mismatch: produced $r_idx, expected $nRelease") // @@ junseok_modify
 
 	// Signalling to frontend
 	val seq_inflight_wv0 = (allSeqs.map(_.io.seq_hazard).map { h =>
@@ -527,7 +595,11 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 		h.valid && (h.bits.eg < egsPerVReg.U)
 	} ++ vxus.flatten.map(_.io.iter_hazards).flatten.map { h =>
 		h.valid && (h.bits.eg < egsPerVReg.U)
+
+	} ++ vcu.io.pipe_hazards.toSeq.map { h => // @@ PID VCU Hazard Check
+    	h.valid && (h.bits.eg < egsPerVReg.U)
 	}).orR
+
 	val vdq_inflight_wv0 = vdq.io.peek.map { h =>
 		h.valid && h.bits.may_write_v0
 	}.orR

@@ -10,117 +10,117 @@
 [0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_gemmini/Controller.scala:69:16: Implicit definition should have explicit type (inferred freechips.rocketchip.tilelink.TLEdgeOut) [quickfixable][0m
 [0m[[0m[33mwarn[0m] [0m[0m  implicit val edge = outer.spad.id_node.edges.out.head[0m
 [0m[[0m[33mwarn[0m] [0m[0m               ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:14:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:16:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:24:17: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val ror, rol, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m                ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:28:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:30:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:7: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:10: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:13: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:43:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:43:10: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:47:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:49:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:51:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:51:10: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:55:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:57:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:59:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:61:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:65:7: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:73:13: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:76:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:13: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m            ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:80:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:82:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:84:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:84:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:7: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:10: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val _, _ = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:15: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m              ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:26: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m                         ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:36: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m                                   ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:39: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m                                      ^[0m
-[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:89:42: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
-[0m[[0m[33mwarn[0m] [0m[0m  val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
-[0m[[0m[33mwarn[0m] [0m[0m                                         ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:14:6: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:16:6: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:24:16: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val ror, rol, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	              ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:28:6: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:30:6: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:6: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:9: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:35:12: Pattern definition introduces Unit-valued member of OPIFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:45:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:45:9: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:49:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:51:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:53:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:53:9: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:57:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:59:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:61:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:63:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:67:6: Pattern definition introduces Unit-valued member of OPMFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:75:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:75:9: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:75:12: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:78:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:80:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:80:9: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:80:12: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	          ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:82:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:84:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:86:9: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:88:6: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:88:9: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val _, _ = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:91:14: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	            ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:91:25: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	                       ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:91:35: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	                                 ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:91:38: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	                                    ^[0m
+[0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/Consts.scala:91:41: Pattern definition introduces Unit-valued member of OPFFunct6; consider wrapping it in `locally { ... }`.[0m
+[0m[[0m[33mwarn[0m] [0m[0m	val fwaddw, _, fwsubw, _, fwmul, _, _, _, fwmacc, fwnmacc, fwmsac, fwnmsac = Value[0m
+[0m[[0m[33mwarn[0m] [0m[0m	                                       ^[0m
 [0m[[0m[33mwarn[0m] [0m[0m/home/woojin/_risc_vela/chipyard/generators/_f_vela/src/main/scala/f_vela_saturn/common/DCEQueue.scala:21:27: reference to entries is ambiguous;[0m
 [0m[[0m[33mwarn[0m] [0m[0mit is both defined in the enclosing class DCEQueue and inherited in the enclosing anonymous class as value entries (defined in class QueueIO)[0m
 [0m[[0m[33mwarn[0m] [0m[0mIn Scala 2, symbols inherited from a superclass shadow symbols defined in an outer scope.[0m

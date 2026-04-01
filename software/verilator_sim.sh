@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHIPYARD_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 VERILATOR_DIR="$CHIPYARD_DIR/sims/verilator"
@@ -51,6 +50,8 @@ ulimit -s unlimited
 
 # 시뮬레이션 실행 (+verbose 로그는 build 폴더 내에 저장)
 # $SIM_PATH +max-cycles=10000000 -- $PK_PATH $ELF_FILE 2>&1 | tee "$BUILD_DIR/${ELF_NAME}.log"
+
+# BareMetal SIM
 $SIM_PATH \
     +permissive \
     +max-cycles=100000000 \
@@ -58,7 +59,7 @@ $SIM_PATH \
     $ELF_FILE \
     2>&1 | tee "$BUILD_DIR/${ELF_NAME}.log"
 
-
+# Proxy Kernel SIM
 # $SIM_PATH \
 #     +permissive \
 #     +max-cycles=100000000 \

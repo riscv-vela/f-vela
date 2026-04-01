@@ -48,10 +48,6 @@ trait OPFInstruction extends VectorInstruction {
   def VF = new OPFVFInstruction(this)
 }
 
-/* yookyung_generate@@@@Custom */
-object VROPE     extends OPIInstruction    { val props = Seq(F6(OPIFunct6.vfrope)  , ReadsVS1.N, ReadsVS2.Y, ReadsScalar1.Y, WritesVD.Y, IsVRoPE.Y) }
-/* Custom */
-
 object ADD       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.add)     , DoSub.N, Averaging.N, CarryIn.N) }
 object SUB       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.sub)     , DoSub.Y, Averaging.N, CarryIn.N) }
 object RSUB      extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rsub)    , DoSub.Y, Averaging.N, CarryIn.N, Swap12.Y) }
@@ -235,4 +231,12 @@ object ROL        extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rol) 
 object RORI       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rol)      , UsesShift.Y, ShiftsLeft.Y, ScalingShift.N) }
 object ROR        extends OPIInstruction    { val props = Seq(F6(OPIFunct6.ror)      , UsesShift.Y, ShiftsLeft.N, ScalingShift.N) }
 object WSLL       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.wsll)     , UsesShift.Y, ShiftsLeft.Y, ScalingShift.N, Wide2VD.Y, ZextImm5.Y) }
+
+/* Custom */
+/* yookyung_generate@@@@Custom */
+object VROPE     extends OPIInstruction    { val props = Seq(F6(OPIFunct6.vfrope)  , ReadsVS1.N, ReadsVS2.Y, ReadsScalar1.Y, WritesVD.Y, IsVRoPE.Y) }
+/* junseok_generate @@ Custom */
+object VFPID64B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredosum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
+object VFPID32B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredusum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
+
 
