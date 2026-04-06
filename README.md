@@ -370,7 +370,7 @@ cd chipyard
 
 If the build-setup.sh script fails on conflict issues sometimes it helps to run conda update -n base --all
 
-> example) ./build-setup.sh riscv-tools -s 1 -s 2 -s3
+> example) ./build-setup.sh riscv-tools -s 1 -s 2
 - -s 1 skips initializing Conda environment
 - -s 2 skips initializing Chipyard submodules
 - -s 3 skips initializing toolchain collateral (Spike, PK, tests, libgloss)
