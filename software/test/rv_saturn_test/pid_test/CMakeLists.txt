@@ -13,7 +13,6 @@ cmake_minimum_required(VERSION 3.10)
 
 project(chipyard-tests LANGUAGES C CXX)
 
-
 #################################
 # RISCV Toolchain
 #################################
@@ -63,7 +62,6 @@ add_link_options(${SPEC_FLAGS})
 add_link_options(-T ${LINKER_SCRIPT})
 add_link_options(-Wl,-u,_printf_float)
 
-
 #################################
 # Build
 #################################
@@ -101,23 +99,23 @@ add_link_options(-Wl,-u,_printf_float)
 # add_executable(pid_scalar_8 pid_scalar_8.c)
 
 # PID_vector_float
-add_executable(pid_vector_1f pid_vector_1f.c)
-add_executable(pid_vector_2f pid_vector_2f.c)
-add_executable(pid_vector_4f pid_vector_4f.c)
-add_executable(pid_vector_8f pid_vector_8f.c)
+# add_executable(pid_vector_1f pid_vector_1f.c)
+# add_executable(pid_vector_2f pid_vector_2f.c)
+# add_executable(pid_vector_4f pid_vector_4f.c)
+# add_executable(pid_vector_8f pid_vector_8f.c)
 
 # PID_vector_double
-add_executable(pid_vector_1d pid_vector_1d.c)
-add_executable(pid_vector_2d pid_vector_2d.c)
-add_executable(pid_vector_4d pid_vector_4d.c)
-add_executable(pid_vector_8d pid_vector_8d.c)
+# add_executable(pid_vector_1d pid_vector_1d.c)
+# add_executable(pid_vector_2d pid_vector_2d.c)
+# add_executable(pid_vector_4d pid_vector_4d.c)
+# add_executable(pid_vector_8d pid_vector_8d.c)
 #add_executable(rmsNorm rmsNorm.c)
 
 # vfpid
 add_executable(vfpid_4f vfpid_4f.c)
 add_executable(vfpid_4d vfpid_4d.c)
 
-add_executable(test_vector_csr test_vector_csr.c)
+# add_executable(test_vector_csr test_vector_csr.c)
 add_executable(pid_scalar_float_optimized pid_scalar_float_optimized.c)
 add_executable(pid_scalar_double_optimized pid_scalar_double_optimized.c)
 add_executable(pid_vector_float_optimized pid_vector_float_optimized.c)
@@ -179,23 +177,23 @@ endfunction()
 # add_dump_target(pid_vector_4d)
 
 # PID_vector_float
-add_dump_target(pid_vector_1f)
-add_dump_target(pid_vector_2f)
-add_dump_target(pid_vector_4f)
-add_dump_target(pid_vector_8f)
+# add_dump_target(pid_vector_1f)
+# add_dump_target(pid_vector_2f)
+# add_dump_target(pid_vector_4f)
+# add_dump_target(pid_vector_8f)
 
 # PID_vector_double
-add_dump_target(pid_vector_1d)
-add_dump_target(pid_vector_2d)
-add_dump_target(pid_vector_4d)
-add_dump_target(pid_vector_8d)
+# add_dump_target(pid_vector_1d)
+# add_dump_target(pid_vector_2d)
+# add_dump_target(pid_vector_4d)
+# add_dump_target(pid_vector_8d)
 
 # vfpid
 add_dump_target(vfpid_4f)
 add_dump_target(vfpid_4d)
 
 # add_dump_target(rmsNorm)
-add_dump_target(test_vector_csr)
+# add_dump_target(test_vector_csr)
 add_dump_target(pid_scalar_float_optimized)
 add_dump_target(pid_scalar_double_optimized)
 add_dump_target(pid_vector_float_optimized)

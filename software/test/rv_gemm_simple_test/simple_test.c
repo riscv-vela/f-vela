@@ -4,14 +4,14 @@
 // 동작 흐름:
 //   flush → config_ld/st/ex → mvin(A,B) → preload(B,C_acc) → compute(A,GARBAGE) → mvout(C) → fence → 검증
 //
-// ★ OS vs WS 인자 구분 ★
+// OS vs WS 인자 구분
 //   OS (Output Stationary):
-//     preload(D_bias, C_output)     ← D가 초기 누산값(바이어스)
-//     compute_preloaded(A, B)       ← A와 B가 행렬 입력
+//     preload(D_bias, C_output)     - D가 초기 누산값(바이어스)
+//     compute_preloaded(A, B)       - A와 B가 행렬 입력
 //
 //   WS (Weight Stationary):
-//     preload(B_weights, C_output)  ← B가 PE에 고정(stationary)
-//     compute_preloaded(A, D_bias)  ← A가 스트리밍, D는 바이어스(없으면 GARBAGE_ADDR)
+//     preload(B_weights, C_output)  - B가 PE에 고정(stationary)
+//     compute_preloaded(A, D_bias)  - A가 스트리밍, D는 바이어스(없으면 GARBAGE_ADDR)
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +46,7 @@ int main() {
     }
 
     // ----------------------------------------------------------------
-    // 2. CPU 황금값 계산 (검증용)
+    // 2. CPU 계산 (검증용)
     // ----------------------------------------------------------------
     printf("CPU: Calculating golden reference...\n");
     for (int i = 0; i < MAT_DIM; i++)
@@ -57,7 +57,7 @@ int main() {
     // ----------------------------------------------------------------
     // 3. Gemmini 가속기 초기화
     // ----------------------------------------------------------------
-    printf("Gemmini: Starting Hardware MatMul (Output Stationary)...\n");
+    printf("Gemmini: Starting Hardware MatMul (Weight Stationary)...\n");
 
     gemmini_flush(0);                          // TLB flush
     gemmini_config_ld(DIM * sizeof(elem_t));   // mvin 스트라이드 설정
@@ -67,7 +67,7 @@ int main() {
     // ----------------------------------------------------------------
     // 4. 스크래치패드 주소 정의
     //    스크래치패드 (일반 데이터): bit[31] = 0
-    //    누산기 (acc 메모리):        bit[31] = 1  ← 반드시 설정
+    //    누산기 (acc 메모리):        bit[31] = 1  반드시 설정
     //    누산기 overwrite 모드:      bit[30] = 0 (새로 씀)
     //    누산기 accumulate 모드:     bit[30] = 1 (누적)
     // ----------------------------------------------------------------

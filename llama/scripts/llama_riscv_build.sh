@@ -4,8 +4,8 @@ source $CHIPYARD_DIR/env.sh
 
 # export RISCV_ROOT_PATH=$RISCV #/home/woojin/_risc_vela/chipyard/.conda-env/riscv-tools
 # export RISCV_ROOT_PATH_IME1=$RISCV_ROOT_PATH
-
 # Chipyard의 env.sh Riscv 툴체인에서 RVV 만 버젼 문제로 인해, 빌드는 Local Riscv 툴체인으로 진행 (spacemit-toolchain-linux-glibc-x86_64-v1.1.2 사용)
+# 
 export RISCV_ROOT_PATH="/home/woojin/riscv/spacemit-toolchain-linux-glibc-x86_64-v1.1.2"
 export RISCV_ROOT_PATH_IME1=$RISCV_ROOT_PATH
 
@@ -36,9 +36,6 @@ cmake -B build \
 #     -DCMAKE_INSTALL_PREFIX=build/installed
 
 cmake --build build --config Release -j$(nproc)
-
-
-
 
 # cmake -B build \
 #     -DBUILD_SHARED_LIBS=OFF \

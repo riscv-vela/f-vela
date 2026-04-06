@@ -20,7 +20,6 @@ llm.create_chat_completion(
 # # Load model directly
 # from transformers import AutoTokenizer, AutoModelForCausalLM
 
-# # 저장하고 싶은 경로 설정
 # save_path = "./"
 
 # tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", cache_dir=save_path)

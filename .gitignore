@@ -5,8 +5,7 @@ out/
 llama/
 md/
 target/
-
-# linked folder
+_bak/
 _link/*
 
 # Generated files
@@ -16,3 +15,9 @@ bin/
 tmp/
 *.tmp
 *.Identifier
+
+*.ld
+
+# Documentation files
+AGENTS.md
+CLAUDE.md

@@ -23,6 +23,10 @@ _after_mret:
     la      t1, x_data
     vle16.v v2, (t1)
 
+    # la      t4, lutA_start   # t4 레지스터에 sin 테이블 주소 담기
+    # la      t5, lutB_start   # t5 레지스터에 cos 테이블 주소 담기
+
+
     fence   iorw, iorw
 
     # custom instruction : vfrope.fvx
@@ -41,9 +45,18 @@ _after_mret:
     .section .data
     .align 2
 
+
 x_data:
     .half   0x2000, 0x4000, 0x6000, 0x7FFF
     .half   0xE000, 0xC000, 0xA000, 0x8000
+
+# ------------------
+#    .align 4
+#lutA_start:
+#    .incbin "lutA.hex" 
+#lutB_start:
+#    .incbin "lutB.hex"
+# ------------------
 
 y_data:
     .space  16
