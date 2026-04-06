@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CHIPYARD_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+SOFTWARE_DIR="$CHIPYARD_DIR/generators/_f_vela/software/"
 VERILATOR_DIR="$CHIPYARD_DIR/sims/verilator"
 SIMULATOR="simulator-chipyard.harness-FVelaSoCConfigTest"
 # CONFIG_NAME="simulator-chipyard.harness-FVelaGemminiConfigTest"
 # CONFIG_NAME="simulator-chipyard.harness-FVelaGemminiConfigTest-debug"
 
+
 # 프로젝트 설정 
-BUILD_DIR="$SCRIPT_DIR/build"
+BUILD_DIR="$SOFTWARE_DIR/build"
 
 # 실행할 ELF 파일 (인자가 있으면 해당 파일, 없으면 기본값)
 ELF_FILE="${1:-$BUILD_DIR/mpgemm.elf}"
@@ -48,38 +51,61 @@ source "$CHIPYARD_DIR/env.sh"
 ulimit -s unlimited
 
 #argument parsing
+# 1. usage 함수 정의 (에러 방지)
+usage() {
+    echo "Usage: $0 [ELF_FILE] [-s|--sim CONFIG_NAME] [-pk PK_PATH] [--clean]"
+}
+
+# 2. 파싱 전 기본값 설정
+ELF_FILE=""
+DO_CLEAN=false
+
+# 3. Argument Parsing
 while [[ $# -gt 0 ]]; do
     case $1 in
         -s|--sim)
+            # simulator-chipyard.harness- 부분을 포함해서 입력하면 중복되므로 
+            # CONFIG_NAME만 받거나, 전체 이름을 받도록 처리
             SIM_NAME="$2"
-            SIMULATOR="simulator-chipyard.harness-$SIM_NAME"
+            if [[ $SIM_NAME == simulator-chipyard.harness-* ]]; then
+                SIMULATOR="$SIM_NAME"
+            else
+                SIMULATOR="simulator-chipyard.harness-$SIM_NAME"
+            fi
             shift 2
             ;;
         -pk) 
             PK_PATH="$2"
             shift 2
             ;;
-        
         --clean)
             DO_CLEAN=true
             shift
-            ;;       
-
+            ;;
         -h|--help)
             usage
-            echo "Example usage:"
-            echo "  $0 -s MyCustomSim (default: $SIMULATOR)"
-            echo "  $0 -pk /path/to/pk (default: $PK_PATH)"
-            echo "  $0 --clean"
             exit 0
             ;;
-            
-        *)
+        -*) # 알 수 없는 옵션 처리
             echo "Unknown option: $1"
             usage
+            exit 1
+            ;;
+        *) # 옵션이 아닌 것은 ELF_FILE로 간주
+            ELF_FILE="$1"
+            shift
             ;;
     esac
 done
+
+# 4. ELF_FILE이 지정되지 않았을 경우 기본값 적용
+if [ -z "$ELF_FILE" ]; then
+    ELF_FILE="$BUILD_DIR/mpgemm.elf"
+fi
+
+# 5. 최종 경로 및 로그 설정 (파싱 후에 반영)
+ELF_NAME=$(basename "$ELF_FILE")
+SIM_PATH="$VERILATOR_DIR/$SIMULATOR"
 
 
 # 시뮬레이션 실행 (+verbose 로그는 build 폴더 내에 저장)
