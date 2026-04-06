@@ -8,8 +8,8 @@ import f_vela_gemmini._
 class FVelaSoCConfigTest extends Config(
     new f_vela_saturn.rocket.WithRocketVectorUnit(256, 256, VectorParams.refParams) ++
     new f_vela_gemmini.GemminiCustomConfig() ++ 
-    // new freechips.rocketchip.rocket.WithNHugeCores(1) ++
-    new shuttle.common.WithNShuttleCores(1) ++
+    new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+    // new shuttle.common.WithNShuttleCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
 	new chipyard.config.AbstractConfig
 )

@@ -43,17 +43,18 @@ else
     patch -p0 < "$BUILD_SBT_PATCH"
 fi
 
-# chipyard(verilator, firemarshal) sims folder linking (optional)
+# chipyard(verilator, firemarshal, firesim) sims folder linking (optional)
 LINK_DIR="$CHIPYARD_DIR/generators/_f_vela/_link"
 if [ -d "$LINK_DIR" ]; then
-    echo "Linking sims/verilator from $LINK_DIR to $CHIPYARD_DIR..."
-    if [ -L "$LINK_DIR/sims/verilator/" ]; then
-        echo "Link already exists at $LINK_DIR/sims/verilator. Skipping linking."
-    elif [ -e "$LINK_DIR/sims/verilator/" ]; then
-        echo "Error: A file or directory already exists at $LINK_DIR/sims/verilator. Please remove it before linking."
+    echo "Linking sims/verilator and firesim from $LINK_DIR to $CHIPYARD_DIR..."
+    if [ -L "$LINK_DIR/sims/verilator/" ] || [ -L "$LINK_DIR/sims/firesim/" ]; then
+        echo "Link already exists at $LINK_DIR/sims/verilator or $LINK_DIR/sims/firesim. Skipping linking."
+    elif [ -e "$LINK_DIR/sims/verilator/" ] || [ -e "$LINK_DIR/sims/firesim/" ]; then
+        echo "Error: A file or directory already exists at $LINK_DIR/sims/verilator or $LINK_DIR/sims/firesim. Please remove it before linking."
     else       
-        echo "Creating symbolic link for sims/verilator..."
-        ln -s "$CHIPYARD_DIR/sims/verilator" "$LINK_DIR"
+        echo "Creating symbolic link for sims/verilator and firesim..."
+        ln -s "$CHIPYARD_DIR/sims/verilator" "$LINK_DIR/verilator"
+        ln -s "$CHIPYARD_DIR/sims/firesim" "$LINK_DIR/firesim"
     fi
 else
     echo "Warning: Link directory not found at $LINK_DIR. Skipping linking."

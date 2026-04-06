@@ -434,16 +434,8 @@ chipyard
 
 ## Verilator Simulation 
 ```sh
-./script/build_verilator.sh
-./script/verilator_sim.sh [-s simulator binary] [binary file(.elf or .riscv)] 
+./script/verilator_make.sh
+./script/verilator_sim.sh risc-v_binary [-s simulator binary]  
 # ex 1) ./script/verilator_sim.sh software/build/mpgemm.elf
 # ex 2) ./script/verilator_sim.sh software/build/simple_test.elf -s FVelaSoCConfigTest
-```
-
-## FPGA Target Build
-> Target board : Alveo u280
-
-```sh
-cd ../../fpga # chipyard directory
-make SUB_PROJECT=u280 CONFIG=U280VelaSoCConfig
 ```
