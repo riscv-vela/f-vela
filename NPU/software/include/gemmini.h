@@ -1170,6 +1170,23 @@ static void gemv_auto(size_t dim_I, size_t dim_J, size_t dim_K,
 
 //This function is for mpgemm
 
+//This function is for mpgemm
+static inline int tiled_mpgemm_total_spad_rows(size_t tile_I, size_t tile_J_packed, size_t tile_K) {
+  // A tile mats: tile_I * tile_K
+  const int A_mats = tile_I * tile_K;
+
+  // B tile mats (logical): tile_K * (tile_J_out) = tile_K * (tile_J_packed*4)
+  // but stored packed -> 1/4 footprint => effectively tile_K * tile_J_packed
+  const int B_mats_effective = tile_K * tile_J_packed;
+
+  // If you also store D/bias in spad, add it here (depends on your kernel)
+  const int D_mats = 0;
+
+  // Convert mats -> rows. In Gemmini SW, 1 "mat" corresponds to DIM rows in spad addressing.
+  // That's why earlier code uses mats_in_partition = partition_rows / DIM.
+  return (A_mats + B_mats_effective + D_mats) * DIM;
+}
+
 static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
         const elem_t* A, const elem_t* B,
         const void * D, void * C,
@@ -1208,30 +1225,33 @@ static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
        tile_J = dim_J_padded/DIM;
        tile_K = 1;
     } else  {
-       tile_I = dim_I_padded/DIM < 2 ? dim_I_padded/DIM : 2;
-       tile_J = dim_J_padded/DIM < 4 ? dim_J_padded/DIM : 4;
+       tile_I = dim_I_padded/DIM < 2 ? dim_I_padded/DIM : 1;
+       tile_J = dim_J_padded/DIM < 4 ? dim_J_padded/DIM : 2;
        tile_K = dim_K_padded/DIM < db_max_tile_k ? dim_K_padded/DIM : db_max_tile_k;
     }
     // Fill scratchpad as much as possible
     while (true) {
       bool increased = false;
 
-      if (tiled_matmul_total_spad_rows(tile_I, tile_J+1, tile_K) <= max_spad_rows &&
-          tiled_matmul_total_acc_rows(tile_I, (tile_J+1)*4) <= max_acc_rows &&
-          (tile_J+1) * DIM <= dim_J_padded) {
+      // Grow J (packed)
+      if ((size_t)tiled_mpgemm_total_spad_rows(tile_I, tile_J + 1, tile_K) <= max_spad_rows &&
+          (size_t)tiled_matmul_total_acc_rows(tile_I, (tile_J + 1) * 4) <= max_acc_rows &&
+          (tile_J + 1) * DIM <= dim_J_padded) {
         tile_J++;
         increased = true;
       }
 
-      if (tiled_matmul_total_spad_rows(tile_I+1, tile_J, tile_K) <= max_spad_rows &&
-          tiled_matmul_total_acc_rows(tile_I+1, tile_J*4) <= max_acc_rows &&
-          (tile_I+1) * DIM <= dim_I_padded) {
+      // Grow I
+      if ((size_t)tiled_mpgemm_total_spad_rows(tile_I + 1, tile_J, tile_K) <= max_spad_rows &&
+          (size_t)tiled_matmul_total_acc_rows(tile_I + 1, tile_J * 4) <= max_acc_rows &&
+          (tile_I + 1) * DIM <= dim_I_padded) {
         tile_I++;
         increased = true;
       }
 
-      if (tiled_matmul_total_spad_rows(tile_I, tile_J, tile_K+1) <= max_spad_rows &&
-          (tile_K+1) * DIM <= dim_K_padded) {
+      // Grow K
+      if ((size_t)tiled_mpgemm_total_spad_rows(tile_I, tile_J, tile_K + 1) <= max_spad_rows &&
+          (tile_K + 1) * DIM <= dim_K_padded) {
         tile_K++;
         increased = true;
       }
@@ -1242,7 +1262,7 @@ static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
 
 #ifdef PRINT_TILE
 #if PRINT_TILE
-    const int spad_rows = tiled_matmul_total_spad_rows(tile_I, tile_J, tile_K);
+    const int spad_rows = tiled_mpgemm_total_spad_rows(tile_I, tile_J, tile_K);
     const int acc_rows = tiled_matmul_total_acc_rows(tile_I, tile_J);
 
     printf("tile_I: %d\n", tile_I);

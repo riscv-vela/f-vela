@@ -60,9 +60,10 @@ tests = \
 	template \
 	perf \
 	perf_total \
-	mpgemm \
+	ternary_gemm \
 	gemv_single \
 	gemv_double \
+	gemm \
 
 
 tests_baremetal = $(tests:=-baremetal)
