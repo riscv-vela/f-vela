@@ -25,6 +25,8 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
     val busy = Output(Bool())
 
     val counter = new CounterEventIO()
+
+    val profile = new ProfileEventIO(ROB_ID_WIDTH)
   })
 
   // val waiting_for_command :: waiting_for_dma_req_ready :: sending_rows :: Nil = Enum(3)
@@ -317,6 +319,10 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   io.counter.connectEventSignal(CounterEvent.STORE_POOLING_CYCLE, pooling_is_enabled)
   io.counter.connectEventSignal(CounterEvent.STORE_DMA_WAIT_CYCLE, control_state === waiting_for_dma_req_ready)
   io.counter.connectEventSignal(CounterEvent.STORE_SCRATCHPAD_WAIT_CYCLE, io.dma.req.valid && !io.dma.req.ready)
+
+  ProfileEventIO.init(io.profile)
+  io.profile.connectEventSignal(ProfileEvent.ST_CTRL_EXECUTE, cmd.fire, cmd.bits.rob_id.bits)
+
 
   if (use_firesim_simulation_counters) {
     PerfCounter(pooling_is_enabled, "pooling_cycles", "cycles during which store controller is max-pooling")
