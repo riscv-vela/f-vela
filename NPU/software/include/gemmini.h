@@ -57,6 +57,8 @@
 #define k_GEMV_LOOP_WS_CONFIG_STRIDES_AB 27
 #define k_GEMV_LOOP_WS_CONFIG_STRIDES_DC 28
 
+#define SET_PROFILER_PADDR 29
+
 #define CONFIG_EX 0
 #define CONFIG_LD 1
 #define CONFIG_ST 2
@@ -290,6 +292,9 @@ static acc_scale_t_bits acc_scale_t_to_acc_scale_t_bits(acc_scale_t x) {
 
 #define gemmini_config_norm(q_const, q_const_type, set_stats_id_only, act_msb, stat_id, igelu_qb, igelu_qc) \
     ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, (((uint64_t) ((uint32_t) q_const)) << 32) | ((q_const_type & 1) << 18) | ((set_stats_id_only & 1) << 17) | ((act_msb & 1) << 16) | ((uint64_t)stat_id << 8) | CONFIG_BERT, ((uint64_t)((uint32_t)(igelu_qc)) << 32) | ((uint64_t)((uint32_t)(igelu_qb))), k_CONFIG)
+
+#define gemmini_profiler(P) \
+  ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, P, 0, SET_PROFILER_PADDR)
 
 // flush
 #define gemmini_flush(skip) \

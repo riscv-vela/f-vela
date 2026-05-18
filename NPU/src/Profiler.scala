@@ -14,13 +14,15 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy.{IdRange, LazyModule, LazyModuleImp}
 import freechips.rocketchip.tile.{CoreBundle, HasCoreParameters}
 import freechips.rocketchip.tilelink._
+import freechips.rocketchip.rocket.MStatus
 import freechips.rocketchip.rocket.constants.MemoryOpConstants
 
 class PStreamWriteRequest(val dataWidth: Int, val maxBytes: Int)(implicit p: Parameters) extends CoreBundle {
-  val paddr = UInt(coreMaxAddrBits.W)
+  val vaddr = UInt(coreMaxAddrBits.W)
   val data = UInt(dataWidth.W)
   val len = UInt(log2Up((dataWidth/8 max maxBytes)+1).W) // The number of bytes to write
   val block = UInt(8.W) // TODO magic number
+  val status = new MStatus
 
   val store_en = Bool()
 }
@@ -46,6 +48,7 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
 
     val io = IO(new Bundle {
       val req = Flipped(Decoupled(new PStreamWriteRequest(dataWidth, maxBytes)))
+      val tlb = new FrontendTLBIO
       val busy = Output(Bool())
     })
 
@@ -75,14 +78,14 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
     io.req.ready := state_machine_ready_for_req
     io.busy := xactBusy.orR || (state =/= s_idle)
 
-    val paddr = req.paddr
+    val vaddr = req.vaddr
 
     // Select the size and mask of the TileLink request
     class Packet extends Bundle {
       val size = UInt(log2Ceil(maxBytes+1).W)
       val lg_size = UInt(log2Ceil(log2Ceil(maxBytes+1)+1).W)
       val mask = Vec(maxBeatsPerReq, Vec(beatBytes, Bool()))
-      val paddr = UInt(coreMaxAddrBits.W)
+      val vaddr = UInt(vaddrBits.W)
       val is_full = Bool()
 
       val bytes_written = UInt(log2Up(maxBytes+1).W)
@@ -99,20 +102,20 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
       filter(s => s <= dataBytes*2 || s == smallest_write_size)*/
     val write_packets = write_sizes.map { s =>
       val lg_s = log2Ceil(s)
-      val paddr_aligned_to_size = if (s == 1) paddr else Cat(paddr(coreMaxAddrBits-1, lg_s), 0.U(lg_s.W))
-      val paddr_offset = if (s > 1) paddr(lg_s - 1, 0) else 0.U
+      val vaddr_aligned_to_size = if (s == 1) vaddr else Cat(vaddr(vaddrBits-1, lg_s), 0.U(lg_s.W))
+      val vaddr_offset = if (s > 1) vaddr(lg_s - 1, 0) else 0.U
 
-      val mask = (0 until maxBytes).map { i => i.U >= paddr_offset && i.U < paddr_offset +& bytesLeft && (i < s).B }
+      val mask = (0 until maxBytes).map { i => i.U >= vaddr_offset && i.U < vaddr_offset +& bytesLeft && (i < s).B }
 
       val bytes_written = {
-        Mux(paddr_offset +& bytesLeft > s.U, s.U - paddr_offset, bytesLeft)
+        Mux(vaddr_offset +& bytesLeft > s.U, s.U - vaddr_offset, bytesLeft)
       }
 
       val packet = Wire(new Packet())
       packet.size := s.U
       packet.lg_size := lg_s.U
       packet.mask := VecInit(mask.grouped(beatBytes).map(v => VecInit(v)).toSeq)
-      packet.paddr := paddr_aligned_to_size
+      packet.vaddr := vaddr_aligned_to_size
       packet.is_full := mask.take(s).reduce(_ && _)
 
       packet.bytes_written := bytes_written
@@ -120,16 +123,16 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
         val start_of_beat = i * beatBytes
         val end_of_beat = (i+1) * beatBytes
 
-        val left_shift = Mux(paddr_offset >= start_of_beat.U && paddr_offset < end_of_beat.U,
-          paddr_offset - start_of_beat.U,
+        val left_shift = Mux(vaddr_offset >= start_of_beat.U && vaddr_offset < end_of_beat.U,
+          vaddr_offset - start_of_beat.U,
           0.U)
 
-        val right_shift = Mux(paddr_offset +& bytesLeft >= start_of_beat.U && paddr_offset +& bytesLeft < end_of_beat.U,
-          end_of_beat.U - (paddr_offset +& bytesLeft),
+        val right_shift = Mux(vaddr_offset +& bytesLeft >= start_of_beat.U && vaddr_offset +& bytesLeft < end_of_beat.U,
+          end_of_beat.U - (vaddr_offset +& bytesLeft),
           0.U)
 
-        val too_early = paddr_offset >= end_of_beat.U
-        val too_late = paddr_offset +& bytesLeft <= start_of_beat.U
+        val too_early = vaddr_offset >= end_of_beat.U
+        val too_late = vaddr_offset +& bytesLeft <= start_of_beat.U
 
         b := Mux(too_early || too_late, 0.U, beatBytes.U - (left_shift +& right_shift))
       }
@@ -143,7 +146,7 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
     val write_size = write_packet.size
     val lg_write_size = write_packet.lg_size
     val write_beats = write_packet.total_beats()
-    val write_paddr = write_packet.paddr
+    val write_vaddr = write_packet.vaddr
     val write_full = write_packet.is_full
 
     val beatsLeft = Reg(UInt(log2Up(maxBytes/aligned_to).W))
@@ -172,28 +175,61 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
 
     class TLBundleAWithInfo extends Bundle {
       val tl_a = DataMirror.internal.chiselTypeClone[TLBundleA](tl.a.bits)
-      val paddr = Output(UInt(coreMaxAddrBits.W))
+      val vaddr = Output(UInt(vaddrBits.W))
+      val status = Output(new MStatus)
     }
 
-    val pre_a = Wire(Decoupled(new TLBundleAWithInfo)) // untranslated_a
-    xactBusy_fire := pre_a.fire && state === s_writing_new_block
-    pre_a.valid := (state === s_writing_new_block || state === s_writing_beats) && !xactBusy.andR
-    pre_a.bits.tl_a := Mux(write_full, putFull, putPartial)
-    pre_a.bits.paddr := write_paddr
+    val untranslated_a = Wire(Decoupled(new TLBundleAWithInfo))
+    xactBusy_fire := untranslated_a.fire && state === s_writing_new_block
+    untranslated_a.valid := (state === s_writing_new_block || state === s_writing_beats) && !xactBusy.andR
+    untranslated_a.bits.tl_a := Mux(write_full, putFull, putPartial)
+    untranslated_a.bits.vaddr := write_vaddr
+    untranslated_a.bits.status := req.status
 
-    tl.a.valid := pre_a.valid
-    tl.a.bits := pre_a.bits.tl_a
-    tl.a.bits.address := pre_a.bits.paddr
-    pre_a.ready := tl.a.ready
+    val retry_a = Wire(Decoupled(new TLBundleAWithInfo))
+    val shadow_retry_a = Module(new Queue(new TLBundleAWithInfo, 1))
+    shadow_retry_a.io.enq.valid := false.B
+    shadow_retry_a.io.enq.bits := DontCare
+    val tlb_arb = Module(new Arbiter(new TLBundleAWithInfo, 3))
+    tlb_arb.io.in(0) <> retry_a
+    tlb_arb.io.in(1) <> shadow_retry_a.io.deq
+    tlb_arb.io.in(2) <> untranslated_a
+
+    val tlb_q = Module(new Queue(new TLBundleAWithInfo, 1, pipe=true))
+    tlb_q.io.enq <> tlb_arb.io.out
+
+    io.tlb.req.valid := tlb_q.io.deq.fire
+    io.tlb.req.bits.tlb_req.vaddr := tlb_q.io.deq.bits.vaddr
+    io.tlb.req.bits.tlb_req.passthrough := false.B
+    io.tlb.req.bits.tlb_req.size := 0.U
+    io.tlb.req.bits.tlb_req.cmd := M_XWR
+    io.tlb.req.bits.status := tlb_q.io.deq.bits.status
+
+    val translate_q = Module(new Queue(new TLBundleAWithInfo, 1, pipe=true))
+    translate_q.io.enq <> tlb_q.io.deq
+    when (retry_a.valid) {
+      translate_q.io.enq.valid := false.B
+      shadow_retry_a.io.enq.valid := tlb_q.io.deq.valid
+      shadow_retry_a.io.enq.bits := tlb_q.io.deq.bits
+    }
+    translate_q.io.deq.ready := tl.a.ready || io.tlb.resp.miss
+
+    retry_a.valid := translate_q.io.deq.valid && io.tlb.resp.miss
+    retry_a.bits := translate_q.io.deq.bits
+    assert(!(retry_a.valid && !retry_a.ready))
+
+    tl.a.valid := translate_q.io.deq.valid && !io.tlb.resp.miss
+    tl.a.bits := translate_q.io.deq.bits.tl_a
+    tl.a.bits.address := RegEnableThru(io.tlb.resp.paddr, RegNext(io.tlb.req.fire))
 
     tl.d.ready := xactBusy.orR
 
-    when (pre_a.fire) {
+    when (untranslated_a.fire) {
       when (state === s_writing_new_block) {
         beatsLeft := write_beats - 1.U
 
-        val next_paddr = req.paddr + write_packet.bytes_written
-        req.paddr := next_paddr
+        val next_vaddr = req.vaddr + write_packet.bytes_written
+        req.vaddr := next_vaddr
 
         bytesSent := bytesSent + bytes_written_this_beat
 
@@ -343,12 +379,17 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
     class Impl extends LazyModuleImp(this) with HasCoreParameters {
       val io = IO(new Bundle {
           val profile_io = Flipped(new ProfileIO(cmd_t, ROB_ID_WIDTH))
-          val profiler_dram_addr = Input(UInt(coreMaxAddrBits.W))
+          val profiler_vaddr_valid = Input(Bool())
+          val profiler_vaddr = Input(UInt(coreMaxAddrBits.W))
+          val profiler_status = Input(new MStatus)
+          val tlb = new FrontendTLBIO
+          val busy = Output(Bool())
       })
 
       writer.module.io.req.bits.len := 8.U
       writer.module.io.req.bits.block := 0.U
       writer.module.io.req.bits.store_en := true.B
+      writer.module.io.tlb <> io.tlb
     
       val ldq :: exq :: stq :: Nil = Enum(3)
       val q_t = ldq.cloneType // 큐 타입 저장(ld?ex?st?)
@@ -359,16 +400,9 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
           val cmd = cmd_t.cloneType
       }
 
-      val profiler_paddr = RegInit(0.U(coreMaxAddrBits.W))
-      val profiler_paddr_valid = RegInit(false.B)
-      when (io.profiler_dram_addr =/= 0.U && !profiler_paddr_valid){
-          profiler_paddr_valid := true.B
-          profiler_paddr := io.profiler_dram_addr
-          printf("paddr: %d\n", profiler_paddr)
-      }. elsewhen (writer.module.io.req.fire) {
-        val next_paddr = profiler_paddr + 8.U
-        profiler_paddr := next_paddr
-      }
+      val profiler_vaddr = RegInit(0.U(coreMaxAddrBits.W))
+      val profiler_vaddr_valid = RegInit(false.B)
+      val profiler_status = RegInit(0.U.asTypeOf(new MStatus))
 
       val write_q = Module(new Queue(UInt(data_w.W), res_max_per_type, true, true))
       write_q.io.enq.valid := false.B
@@ -376,7 +410,21 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
       write_q.io.deq.ready := writer.module.io.req.ready
       writer.module.io.req.valid := write_q.io.deq.valid
       writer.module.io.req.bits.data := write_q.io.deq.bits
-      writer.module.io.req.bits.paddr := profiler_paddr
+      writer.module.io.req.bits.vaddr := profiler_vaddr
+      writer.module.io.req.bits.status := profiler_status
+
+      io.busy := writer.module.io.busy || write_q.io.deq.valid
+
+      when (io.profiler_vaddr_valid) {
+          assert(!io.busy, "Profiler address can only be configured while profiler is idle")
+          profiler_vaddr_valid := io.profiler_vaddr =/= 0.U
+          profiler_vaddr := io.profiler_vaddr
+          profiler_status := io.profiler_status
+          printf("vaddr: %d\n", io.profiler_vaddr)
+      }. elsewhen (writer.module.io.req.fire) {
+        val next_vaddr = profiler_vaddr + 8.U
+        profiler_vaddr := next_vaddr
+      }
 
       val tag = RegInit(0.U(30.W))
       val clk_cnt = RegInit(0.U(31.W))
@@ -443,7 +491,7 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
                       .elsewhen(i.U === ProfileEvent.ROB_COMPLETE.U){
                           when (mvNcomList.map(_ === cmd.inst.funct).reduce((a: Bool, b: Bool) => a || b)) {
                             printf("%d, %d, %d\n", q, entry.start_time, clk_cnt)
-                            when (profiler_paddr_valid) {
+                            when (profiler_vaddr_valid) {
                               write_q.io.enq.valid := true.B
                               write_q.io.enq.bits := Cat(q, entry.start_time, clk_cnt)
                             }
