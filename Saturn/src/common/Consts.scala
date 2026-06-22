@@ -33,8 +33,6 @@ object OPIFunct6 extends ChiselEnum {
   val _, _, _ = Value
   val wsll = Value
 
-  //dongin
-  val strcmp = Value(0x3e.U)
   val illegal = Value(0x40.U)
 }
 
