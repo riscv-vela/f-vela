@@ -68,18 +68,10 @@ class VectorDispatcher(implicit p: Parameters) extends CoreModule()(p) with HasV
   io.vat_tail := vat_tail
   io.vat_head := vat_head
 
-  val move_to_scalar = (
-    (io.issue.bits.funct3 === OPMVV && io.issue.bits.opmf6 === OPMFunct6.wrxunary0 && io.issue.bits.rs1 === 0.U) ||
-    (io.issue.bits.funct3 === OPFVV && io.issue.bits.opff6 === OPFFunct6.wrfunary0 && io.issue.bits.rs1 === 0.U)
-  )
-  when (move_to_scalar) {
+  when ((io.issue.bits.funct3 === OPMVV && io.issue.bits.opmf6 === OPMFunct6.wrxunary0 && io.issue.bits.rs1 === 0.U) ||
+        (io.issue.bits.funct3 === OPFVV && io.issue.bits.opff6 === OPFFunct6.wrfunary0 && io.issue.bits.rs1 === 0.U)) {
     issue_inst.vconfig.vl := 1.U
     issue_inst.vstart := 0.U
-  }
-
-  // This resolves a false critical path from PTC fissioning of VL to the scalar-resp VL check
-  when (io.issue.bits.fission_vl.valid) {
-    issue_inst.vconfig.vl := io.issue.bits.fission_vl.bits
   }
 
   // Strided with stride = 1 << eew is just unit-strided
@@ -96,7 +88,7 @@ class VectorDispatcher(implicit p: Parameters) extends CoreModule()(p) with HasV
     0.U // vpopc
   )
 
-  when (io.issue.bits.vconfig.vl <= issue_inst.vstart && !(issue_inst.funct3 === OPIVI && issue_inst.opif6 === OPIFunct6.mvnrr) && !move_to_scalar) {
+  when (issue_inst.vconfig.vl <= issue_inst.vstart && !(issue_inst.funct3 === OPIVI && issue_inst.opif6 === OPIFunct6.mvnrr)) {
     io.issue.ready := true.B
     io.mem.valid := false.B
     io.dis.valid := false.B

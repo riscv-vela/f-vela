@@ -177,19 +177,14 @@ class ShiftArray(dLenB: Int) extends Module {
 }
 
 case object ShiftPipeFactory extends FunctionalUnitFactory {
-  def wideNarrowInsns = Seq(
+  def insns = Seq(
+    SLL.VV, SLL.VX, SLL.VI, SRL.VV, SRL.VX, SRL.VI, SRA.VV, SRA.VX, SRA.VI,
     NSRA.VV, NSRA.VX, NSRA.VI, NSRL.VV, NSRL.VX, NSRL.VI,
     NCLIPU.VV, NCLIPU.VX, NCLIPU.VI, NCLIP.VV, NCLIP.VX, NCLIP.VI,
-    // Zvbb
-    WSLL.VV, WSLL.VX, WSLL.VI
-  ).map(_.restrictSEW(0,1,2)).flatten
-
-  def insns = (wideNarrowInsns ++ Seq(
-    SLL.VV, SLL.VX, SLL.VI, SRL.VV, SRL.VX, SRL.VI, SRA.VV, SRA.VX, SRA.VI,
     SSRL.VV, SSRL.VX, SSRL.VI, SSRA.VV, SSRA.VX, SSRA.VI,
     // Zvbb
-    ROL.VV, ROL.VX, ROR.VV, ROR.VX, ROR.VI, RORI.VI,
-  )).map(_.pipelined(2))
+    ROL.VV, ROL.VX, ROR.VV, ROR.VX, ROR.VI, RORI.VI, WSLL.VV, WSLL.VX, WSLL.VI
+  )
   def generate(implicit p: Parameters) = new ShiftPipe()(p)
 }
 
@@ -201,11 +196,11 @@ class ShiftPipe(implicit p: Parameters) extends PipelinedFunctionalUnit(2)(p) {
   val vd_eew   = io.pipe(0).bits.vd_eew
 
   val ctrl = new VectorDecoder(
-    io.pipe(0).bits,
+    io.pipe(0).bits.funct3, io.pipe(0).bits.funct6, 0.U, 0.U,
     supported_insns,
     Seq(UsesShift, ShiftsLeft, ScalingShift))
 
-  io.stall := false.B
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, 0.U, 0.U, supported_insns, Nil).matched
 
   val shift_narrowing = vd_eew < rvs2_eew
   val shift_widening = vd_eew > rvs2_eew
@@ -229,6 +224,7 @@ class ShiftPipe(implicit p: Parameters) extends PipelinedFunctionalUnit(2)(p) {
   shift_arr.io.scaling   := ctrl.bool(ScalingShift)
   shift_arr.io.narrowing := shift_narrowing
 
+  io.pipe0_stall     := false.B
   io.write.valid     := io.pipe(depth-1).valid
   io.write.bits.eg   := io.pipe(depth-1).bits.wvd_eg
   io.write.bits.mask := FillInterleaved(8, io.pipe(depth-1).bits.wmask)

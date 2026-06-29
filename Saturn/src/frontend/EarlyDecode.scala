@@ -9,7 +9,7 @@ import saturn.insns.{VectorInstruction, VectorDecoder}
 
 class EarlyVectorDecode(supported_ex_insns: Seq[VectorInstruction])(implicit p: Parameters) extends RocketVectorDecoder()(p) with HasVectorConsts {
 
-  io.vector := false.B
+  io.vector := false.B // @@@@ drive RocketVectorDecoder.io.vector (a898bdc-era interface)
   io.legal := false.B
   io.fp := false.B
   io.read_rs1 := false.B
@@ -32,17 +32,19 @@ class EarlyVectorDecode(supported_ex_insns: Seq[VectorInstruction])(implicit p: 
   val rs1 = io.inst(19,15)
   val rs2 = io.inst(24,20)
 
-  val v_load = opcode === opcLoad && !width.isOneOf(1.U, 2.U, 3.U, 4.U)
-  val v_store = opcode === opcStore && !width.isOneOf(1.U, 2.U, 3.U, 4.U)
-  val v_arith_maybe = opcode === opcVector && funct3 =/= 7.U
-  val v_arith = v_arith_maybe && new VectorDecoder(rs1, rs2, funct3, funct6, io.vconfig.vtype.vsew, supported_ex_insns, Nil).matched
-
-  io.vector := v_load || v_store || v_arith_maybe
+  val v_load = opcode === opcLoad
+  val v_store = opcode === opcStore
+  val v_arith_maybe = opcode === opcVector && funct3 =/= 7.U // @@@@ is-vector-instruction (independent of decode match)
+  val v_arith = v_arith_maybe && new VectorDecoder(funct3, funct6, rs1, rs2, supported_ex_insns, Nil).matched
+  // @@@@ vector load/store share LOAD-FP/STORE-FP opcode with scalar fld/fsd.
+  //   Distinguish by width: vector EEW widths are {0,5,6,7}; scalar FP widths are {1,2,3,4}.
+  //   Without this filter, a scalar fld/fsd is misrouted to the vector unit and the core hangs.
+  val mem_is_vec = !width.isOneOf(1.U, 2.U, 3.U, 4.U)
+  io.vector := (v_load && mem_is_vec) || (v_store && mem_is_vec) || v_arith_maybe // @@@@
 
   when (v_load || v_store) {
+    io.legal := mew === 0.U && width.isOneOf(0.U, 5.U, 6.U, 7.U)
     val unit = mop === 0.U
-    val whole = unit && ((v_load && lumop === lumopWhole) || (v_store && sumop === sumopWhole))
-    io.legal := mew === 0.U && width.isOneOf(0.U, 5.U, 6.U, 7.U) && (!io.vconfig.vtype.vill || whole)
     when (unit) {
       when (v_load && !lumop.isOneOf(lumopUnit, lumopWhole, lumopMask, lumopFF)) { io.legal := false.B }
       when (v_store && !sumop.isOneOf(sumopUnit, sumopWhole, sumopMask)) { io.legal := false.B }
@@ -51,7 +53,7 @@ class EarlyVectorDecode(supported_ex_insns: Seq[VectorInstruction])(implicit p: 
     io.read_rs1 := true.B
     io.read_rs2 := mop === mopStrided
   } .elsewhen (v_arith) {
-    io.legal := !io.vconfig.vtype.vill
+    io.legal := true.B
     io.read_rs1 := funct3.isOneOf(OPIVX, OPMVX)
     io.read_frs1 := funct3 === OPFVF
     io.write_rd := funct3 === OPMVV && OPMFunct6(funct6) === OPMFunct6.wrxunary0

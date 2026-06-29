@@ -117,8 +117,8 @@ trait HasVectorConsts {
   def OPMVX = "b110".U(3.W)
   def OPCFG = "b111".U(3.W)
 
-  def F6_PID64B = "b000011".U(6.W) // junseok_generate@@@@ pid 플래그를 위한 funct6
-  def F6_PID32B = "b000001".U(6.W) // junseok_generate@@@@ pid 플래그를 위한 funct6
+  def F6_PID64B = "b000011".U(6.W) // @@@@ Custom: funct6 for pid flag
+  def F6_PID32B = "b000001".U(6.W) // @@@@ Custom: funct6 for pid flag
 
   def X = BitPat("b?")
   def N = BitPat("b0")
@@ -126,3 +126,36 @@ trait HasVectorConsts {
 }
 
 object VectorConsts extends HasVectorConsts
+
+object VecDecode extends HasVectorConsts {
+  def apply(funct3: UInt, funct6: UInt, default: Seq[BitPat], table: Seq[(EnumType, Seq[BitPat])]): Seq[UInt] = {
+    def enumToUInt(e: EnumType): Seq[UInt] = e match {
+      case v: OPIFunct6.Type => Seq(OPIVV, OPIVI, OPIVX).map { f3 => ((f3.litValue << 6) + v.litValue).U(9.W) }
+      case v: OPMFunct6.Type => Seq(OPMVV, OPMVX       ).map { f3 => ((f3.litValue << 6) + v.litValue).U(9.W) }
+      case v: OPFFunct6.Type => Seq(OPFVV, OPFVF       ).map { f3 => ((f3.litValue << 6) + v.litValue).U(9.W) }
+    }
+    val nElts = default.size
+    require(table.forall(_._2.size == nElts))
+
+    val elementsGrouped = table.map(_._2).transpose
+    val elementWidths = elementsGrouped.zip(default).map { case (elts, default) =>
+      require(elts.forall(_.getWidth == default.getWidth))
+      default.getWidth
+    }
+    val resultWidth = elementWidths.sum
+    val elementIndices = elementWidths.scan(resultWidth - 1) { case (l, r) => l - r }
+    val truthTable = TruthTable(table.map(e => enumToUInt(e._1).map(u => (BitPat(u), e._2.reduce(_ ## _)))).flatten, default.reduce(_ ## _))
+    val decoded = chisel3.util.experimental.decode.decoder(Cat(funct3(2,0), funct6(5,0)), truthTable)
+    elementIndices.zip(elementIndices.tail).map { case (msb, lsb) => decoded(msb, lsb + 1) }.toSeq
+  }
+
+
+  def applyBools(funct3: UInt, funct6: UInt, default: Seq[BitPat], table: Seq[(EnumType, Seq[BitPat])]): Seq[Bool] = apply(
+    funct3, funct6, default, table).map(_(0))
+
+  def apply(funct3: UInt, funct6: UInt, trues: Seq[EnumType], falses: Seq[EnumType]): Bool = applyBools(
+    funct3, funct6, Seq(BitPat.dontCare(1)), trues.map(e => (e, Seq(BitPat(true.B)))) ++ falses.map(e => (e, Seq(BitPat(false.B)))))(0)
+  def apply(funct3: UInt, funct6: UInt, trues: Seq[EnumType]): Bool = applyBools(
+    funct3, funct6, Seq(BitPat(false.B)), trues.map(e => (e, Seq(BitPat(true.B)))))(0)
+}
+

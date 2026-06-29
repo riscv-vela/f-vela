@@ -14,9 +14,7 @@ class WithRocketVectorUnit(
   dLen: Int = 64,
   params: VectorParams = VectorParams(),
   cores: Option[Seq[Int]] = None,
-  useL1DCache: Boolean = true,
-  mLen: Option[Int] = None
-) extends Config((site, here, up) => {
+  useL1DCache: Boolean = true) extends Config((site, here, up) => {
   case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
     case tp: RocketTileAttachParams => {
       val buildVector = cores.map(_.contains(tp.tileParams.tileId)).getOrElse(true)
@@ -24,7 +22,7 @@ class WithRocketVectorUnit(
         core = tp.tileParams.core.copy(
           vector = Some(RocketCoreVectorParams(
             build = ((p: Parameters) => new SaturnRocketUnit()(p.alterPartial {
-              case VectorParamsKey => params.copy(dLen=dLen, mLen=mLen.getOrElse(dLen))
+              case VectorParamsKey => params.copy(dLen=dLen)
             })),
             vLen = vLen,
             vfLen = 64,
@@ -39,7 +37,7 @@ class WithRocketVectorUnit(
             issueVConfig = false,
             vExts = Seq("zvbb")
           )),
-          fpu = (if (params.useScalarFPFMA) { tp.tileParams.core.fpu.map(_.copy(
+          fpu = (if (params.useScalarFPFMA || params.useScalarFPMisc) { tp.tileParams.core.fpu.map(_.copy(
             sfmaLatency = params.fmaPipeDepth - 1,
             dfmaLatency = params.fmaPipeDepth - 1,
             ifpuLatency = params.fmaPipeDepth - 1,

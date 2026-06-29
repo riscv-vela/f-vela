@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 typedef struct {
     double setpoint;
@@ -18,6 +19,8 @@ int main() {
     };
 
     double dt = 0.1;
+    int start, end;
+    __asm__ volatile ("csrr %0, cycle" : "=r"(start) :: "memory");
     __asm__ volatile (
         // sew=64bit, vl=8, vlen=512, lmul=1
         // 벡터 길이 설정 (2 actuator, 8개 필드)
@@ -47,7 +50,18 @@ int main() {
         : "r"(actuators), "r"(&dt)
         : "t0", "t1", "t2", "t3", "fa0", "v1", "v2", "v3", "v4", "memory"
     );
+    __asm__ volatile ("csrr %0, cycle" : "=r"(end) :: "memory");
 
+    // 결과 출력 (각 벡터 = 한 actuator의 8개 e64 원소: sp,cp,Kp,Ki,Kd,I_prev,err_prev,out)
+    printf("vfpid_4d cycles: %d\n", end - start);
+    double *vp = (double *)actuators;
+    for (int v = 0; v < 4; v++) {
+        printf("v%d:", v + 1);
+        for (int e = 0; e < 8; e++) {
+            printf(" %f", vp[v * 8 + e]);
+        }
+        printf("\n");
+    }
 
-    exit(0);
+    return 0;
 }

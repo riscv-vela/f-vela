@@ -10,22 +10,17 @@ import saturn.common._
 import saturn.insns._
 
 case class IntegerMultiplyFactory(depth: Int, segmented: Boolean) extends FunctionalUnitFactory {
-  def wideningInsns = Seq(
-    WMUL.VV, WMUL.VX, WMULU.VV, WMULU.VX,
-    WMULSU.VV, WMULSU.VX,
-    WMACC.VV, WMACC.VX, WMACCU.VV, WMACCU.VX,
-    WMACCSU.VV , WMACCSU.VX, WMACCUS.VV, WMACCUS.VX,
-  ).map(_.restrictSEW(0, 1, 2)).flatten
-
-  def baseInsns = (wideningInsns ++ Seq(
+  def base_insns = Seq(
     MUL.VV, MUL.VX, MULH.VV, MULH.VX,
     MULHU.VV, MULHU.VX, MULHSU.VV, MULHSU.VX,
+    WMUL.VV, WMUL.VX, WMULU.VV, WMULU.VX,
+    WMULSU.VV, WMULSU.VX,
     MACC.VV, MACC.VX, NMSAC.VV, NMSAC.VX,
     MADD.VV, MADD.VX, NMSUB.VV, NMSUB.VX,
+    WMACC.VV, WMACC.VX, WMACCU.VV, WMACCU.VX,
+    WMACCSU.VV , WMACCSU.VX, WMACCUS.VV, WMACCUS.VX,
     SMUL.VV, SMUL.VX)
-  ).map(_.pipelined(depth))
-
-  def insns = if (segmented) baseInsns else baseInsns.map(_.elementWise)
+  def insns = if (segmented) base_insns else base_insns.map(_.elementWise)
   def generate(implicit p: Parameters) = if (segmented) {
     new SegmentedMultiplyPipe(depth)(p)
   } else {
@@ -36,11 +31,12 @@ case class IntegerMultiplyFactory(depth: Int, segmented: Boolean) extends Functi
 class SegmentedMultiplyPipe(depth: Int)(implicit p: Parameters) extends PipelinedFunctionalUnit(depth)(p) {
   val supported_insns = IntegerMultiplyFactory(depth, true).insns
 
-  io.stall := false.B
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, 0.U, 0.U, supported_insns, Nil).matched
+  io.set_vxsat := false.B
   io.set_fflags.valid := false.B
   io.set_fflags.bits := DontCare
 
-   val ctrl = new VectorDecoder(io.pipe(0).bits, supported_insns, Seq(
+   val ctrl = new VectorDecoder(io.pipe(0).bits.funct3, io.pipe(0).bits.funct6, 0.U, 0.U, supported_insns, Seq(
      MULHi, MULSign1, MULSign2, MULSwapVdV2, MULAccumulate, MULSub))
 
   val in_eew = io.pipe(0).bits.rvs1_eew
@@ -117,6 +113,7 @@ class SegmentedMultiplyPipe(depth: Int)(implicit p: Parameters) extends Pipeline
   val vxsat = Mux(ctrl_smul, smul_sat, 0.U) & io.pipe(depth-2).bits.wmask
   val pipe_vxsat = Pipe(io.pipe(depth-2).valid, vxsat, 1).bits
 
+  io.pipe0_stall     := false.B
   io.write.valid     := io.pipe(depth-1).valid
   io.write.bits.eg   := io.pipe(depth-1).bits.wvd_eg
   io.write.bits.data := pipe_out

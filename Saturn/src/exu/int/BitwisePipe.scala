@@ -16,16 +16,16 @@ case object BitwisePipeFactory extends FunctionalUnitFactory {
     REDAND.VV, REDOR.VV, REDXOR.VV,
     // Zvbb
     ANDN.VV, ANDN.VX
-  ).map(_.pipelined(1))
+  )
   def generate(implicit p: Parameters) = new BitwisePipe()(p)
 }
 
 class BitwisePipe(implicit p: Parameters) extends PipelinedFunctionalUnit(1)(p) {
   val supported_insns = BitwisePipeFactory.insns
 
-  val ctrl = new VectorDecoder(io.pipe(0).bits, supported_insns,
+  val ctrl = new VectorDecoder(io.pipe(0).bits.funct3, io.pipe(0).bits.funct6, 0.U, 0.U, supported_insns,
     Seq(BWAnd, BWOr, BWXor, BWInvOut, BWInv1))
-  io.stall := false.B
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, 0.U, 0.U, supported_insns, Nil).matched
 
   val in1 = Mux(ctrl.bool(BWInv1), ~io.pipe(0).bits.rvs1_data, io.pipe(0).bits.rvs1_data)
   val in2 = io.pipe(0).bits.rvs2_data
@@ -36,6 +36,7 @@ class BitwisePipe(implicit p: Parameters) extends PipelinedFunctionalUnit(1)(p) 
   ))
   val out = Mux(ctrl.bool(BWInvOut), ~op, op)
 
+  io.pipe0_stall     := false.B
   io.write.valid := io.pipe(0).valid
   io.write.bits.eg := io.pipe(0).bits.wvd_eg
   io.write.bits.mask := Mux(io.pipe(0).bits.isOpm && !io.pipe(0).bits.acc,

@@ -9,14 +9,13 @@ import freechips.rocketchip.tile._
 import saturn.common._
 import saturn.insns._
 
-case class MaskUnitFactory(depth: Int) extends FunctionalUnitFactory {
-  require (depth >= 1)
-  def insns = Seq(MV_S_X, MV_X_S, POPC, FIRST, FMV_S_F, FMV_F_S, MSBF, MSOF, MSIF, IOTA, ID).map(_.pipelined(depth))
-  def generate(implicit p: Parameters) = new MaskUnit(depth)(p)
+case object MaskUnitFactory extends FunctionalUnitFactory {
+  def insns = Seq(MV_S_X, MV_X_S, POPC, FIRST, FMV_S_F, FMV_F_S, MSBF, MSOF, MSIF, IOTA, ID)
+  def generate(implicit p: Parameters) = new MaskUnit()(p)
 }
 
-class MaskUnit(depth: Int)(implicit p: Parameters) extends PipelinedFunctionalUnit(depth)(p) {
-  val supported_insns = MaskUnitFactory(depth).insns
+class MaskUnit(implicit p: Parameters) extends PipelinedFunctionalUnit(1)(p) {
+  val supported_insns = MaskUnitFactory.insns
 
   val scalar_wb_busy = RegInit(false.B)
   val scalar_wb_data = Reg(UInt(64.W))
@@ -27,7 +26,7 @@ class MaskUnit(depth: Int)(implicit p: Parameters) extends PipelinedFunctionalUn
 
   def accepts(op: ExecuteMicroOp): Bool = (op.opff6.isOneOf(OPFFunct6.wrfunary0) || op.opmf6.isOneOf(OPMFunct6.wrxunary0, OPMFunct6.munary0)) && !scalar_wb_busy
 
-  io.stall := scalar_wb_busy || io.pipe(0).bits.tail
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, io.iss.op.rs1, io.iss.op.rs2, supported_insns, Nil).matched && !scalar_wb_busy && !io.pipe(0).bits.tail
 
   io.set_vxsat := false.B
   io.set_fflags.valid := false.B
@@ -117,22 +116,19 @@ class MaskUnit(depth: Int)(implicit p: Parameters) extends PipelinedFunctionalUn
   io.scalar_write.bits.fp := scalar_wb_fp
   io.scalar_write.bits.size := scalar_wb_size
 
-  val write_vector = Pipe(io.pipe(0).valid, rxunary0 || rfunary0 || munary0, depth-1).bits
-  val write_mask = Pipe(io.pipe(0).valid, Mux1H(Seq(
+  io.pipe0_stall     := false.B
+  io.write.valid     := io.pipe(0).valid && (rxunary0 || rfunary0 || munary0)
+  io.write.bits.eg   := op.wvd_eg
+  io.write.bits.mask := Mux1H(Seq(
     (rxunary0 || rfunary0 , eewBitMask(op.vd_eew)),
     (munary0 && op.rs1(4) , FillInterleaved(8, op.wmask)),
     (munary0 && !op.rs1(4), op.full_tail_mask & op.rvm_data)
-  )), depth-1).bits
-  val write_data = Pipe(io.pipe(0).valid, Mux1H(Seq(
+  ))
+  io.write.bits.data := Mux1H(Seq(
     (rxunary0 || rfunary0 , op.rvs1_data(63,0)),
     (munary0 && op.rs1(4) , iota_out),
     (munary0 && !op.rs1(4), set)
-  )), depth-1).bits
-
-  io.write.valid := io.pipe(depth-1).valid && write_vector
-  io.write.bits.eg := io.pipe(depth-1).bits.wvd_eg
-  io.write.bits.mask := write_mask
-  io.write.bits.data := write_data
+  ))
 
   when (io.scalar_write.fire) { scalar_wb_busy := false.B }
 }

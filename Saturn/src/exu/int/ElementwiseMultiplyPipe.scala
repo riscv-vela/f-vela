@@ -12,12 +12,12 @@ import saturn.insns._
 class ElementwiseMultiplyPipe(depth: Int)(implicit p: Parameters) extends PipelinedFunctionalUnit(depth)(p) {
   val supported_insns = IntegerMultiplyFactory(depth, false).insns
 
-  io.stall := false.B
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, 0.U, 0.U, supported_insns, Nil).matched
   io.set_vxsat := false.B
   io.set_fflags.valid := false.B
   io.set_fflags.bits := DontCare
 
-  val ctrl = new VectorDecoder(io.pipe(0).bits, supported_insns, Seq(
+  val ctrl = new VectorDecoder(io.pipe(0).bits.funct3, io.pipe(0).bits.funct6, 0.U, 0.U, supported_insns, Seq(
     MULHi, MULSign1, MULSign2, MULSwapVdV2, MULAccumulate, MULSub))
 
   val in_eew = io.pipe(0).bits.rvs1_eew
@@ -56,6 +56,7 @@ class ElementwiseMultiplyPipe(depth: Int)(implicit p: Parameters) extends Pipeli
   val pipe_out = Pipe(io.pipe(depth-2).valid, out(63,0), 1).bits
   val pipe_vxsat = Pipe(io.pipe(depth-2).valid, smul_sat && ctrl_smul, 1).bits
   val wdata = VecInit.tabulate(4)({ eew => Fill(dLenB >> eew, pipe_out((8<<eew)-1,0)) })(io.pipe(depth-1).bits.vd_eew)
+  io.pipe0_stall     := false.B
   io.write.valid     := io.pipe(depth-1).valid
   io.write.bits.eg   := io.pipe(depth-1).bits.wvd_eg
   io.write.bits.data := wdata
