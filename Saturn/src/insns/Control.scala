@@ -13,7 +13,7 @@ object F6            extends XDefaultInstructionField { override val width: Int 
 object F3            extends XDefaultInstructionField { override val width: Int = 3 }
 object RS1           extends XDefaultInstructionField { override val width: Int = 5 }
 object RS2           extends XDefaultInstructionField { override val width: Int = 5 }
-object SEW           extends XDefaultInstructionField { override val width: Int = 2 }
+object SEW           extends XDefaultInstructionField { override val width: Int = 2 } // @@@@ Custom: for restrictSEW
 
 object AlwaysReadsVM     extends NDefaultInstructionField
 object VMBitReadsVM      extends YDefaultInstructionField
@@ -29,12 +29,8 @@ object WritesAsMask      extends NDefaultInstructionField
 object ReadsVS1AsMask    extends NDefaultInstructionField
 object ReadsVS2AsMask    extends NDefaultInstructionField
 object WritesScalar      extends NDefaultInstructionField
-object UsesGatherUnit    extends NDefaultInstructionField
+object UsesPermuteSeq    extends NDefaultInstructionField
 object ZextImm5          extends NDefaultInstructionField
-object Slide             extends NDefaultInstructionField
-object PipelinedExecution extends XDefaultInstructionField
-object PipelineStagesMinus1 extends XDefaultInstructionField { override val width: Int = 3 }
-case class FUSel(w: Int) extends XDefaultInstructionField { override val width: Int = w }
 
 // Execute Sequencer control
 object Elementwise       extends NDefaultInstructionField

@@ -43,43 +43,34 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 
   def vatOlder(i0: UInt, i1: UInt) = cqOlder(i0, i1, io.vat_tail)
 
-  // ====================================================================
-  // Set up the dispatch queue, issue queues, sequencers, execution units
-
   val vdq = Module(new DCEQueue(new VectorIssueInst, vParams.vdqEntries))
   vdq.io.enq <> io.dis
+
+  val perm_buffer = Module(new Compactor(dLenB, dLenB, UInt(8.W), false))
 
   val xissParams = vParams.issStructure.generate(vParams)
   val all_supported_insns = xissParams.map(_.insns).flatten
 
   val vlissq = Module(new IssueQueue(vParams.vlissqEntries, 1))
   val vsissq = Module(new IssueQueue(vParams.vsissqEntries, 1))
-  val vpissq = Module(new IssueQueue(vParams.vpissqEntries, 2)) // permute/reduction
+  val vpissq = Module(new IssueQueue(vParams.vpissqEntries, 1))
   val vxissqs = xissParams.map(q => Module(new IssueQueue(q.depth, q.seqs.size)).suggestName(s"vxissq_${q.name}"))
-  // junseok_generate
   val vcissq = Module(new IssueQueue(2, 1)) // @@@@ Custom issue queue
-  
-  val vxus = xissParams.map(_.seqs.map(s => Module(new ExecutionUnit(s.fus, s.name)).suggestName(s"vxu${s.name}")))
-  val flat_vxus = vxus.flatten
-  val maxPipeDepth = flat_vxus.map(_.maxPipeDepth).max
-  // junseok_generate
-  val vcu = Module(new CustomExecutionUnit).suggestName("vcu") // @@@@ Custom Execution Unit
 
   val vls = Module(new LoadSequencer)
   val vss = Module(new StoreSequencer)
-  val vps = Module(new SpecialSequencer(all_supported_insns))
+  val vps = Module(new PermuteSequencer(xissParams.map(_.insns).flatten))
   val vxs = xissParams.map(q => q.seqs.map(s =>
-    Module(new ExecuteSequencer(s.insns, maxPipeDepth, s.fus.size)).suggestName(s"vxs${s.name}")
+    Module(new ExecuteSequencer(s.insns)).suggestName(s"vxs${s.name}")
   ))
-  // junseok_generate
-  val vcs = Module(new CustomSequencer(Seq(VFPID64B, VFPID32B), maxPipeDepth)).suggestName("vcs") // @@@@vcs 생성
+  val vcs = Module(new CustomSequencer(Seq(VFPID64B, VFPID32B), 7)).suggestName("vcs") // @@@@ Custom sequencer
 
-  // junseok_modify
-  val allSeqs = Seq(vls, vss, vps) ++ vxs.flatten ++ Seq(vcs) // @@@@ allSeqs에 vcs 추가
-  val allIssQs = Seq(vlissq, vsissq, vpissq) ++ vxissqs ++ Seq(vcissq) // @@@@Custom Queue 추가
+  val allSeqs = Seq(vls, vss, vps) ++ vxs.flatten ++ Seq(vcs) // @@@@ + custom
+  val allIssQs = Seq(vlissq, vsissq, vpissq) ++ vxissqs ++ Seq(vcissq) // @@@@ + custom
 
-  val flat_vxs = vxs.flatten
-  require(flat_vxs.size == flat_vxus.size)
+  val vxus = xissParams.map(_.seqs.map(s => Module(new ExecutionUnit(s.fus)).suggestName(s"vxu${s.name}")))
+  val vcu = Module(new CustomExecutionUnit).suggestName("vcu") // @@@@ Custom execution unit
+
 
   io.fp_req.valid := false.B
   io.fp_req.bits := DontCare
@@ -95,94 +86,105 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 
   case class IssueGroup(
     issq: IssueQueue,
-    seqs: Seq[Sequencer[_]])
+    seqs: Seq[PipeSequencer[_]])
 
-  // junseok_modify
+
   val issGroups = Seq(
     IssueGroup(vlissq, Seq(vls)),
     IssueGroup(vsissq, Seq(vss)),
-    IssueGroup(vpissq, Seq(vps)),
+    IssueGroup(vpissq, Seq(vps))
   ) ++ (vxissqs.zip(vxs).map { case (q, seqs) =>
     IssueGroup(q, seqs)
-  }) ++ Seq(IssueGroup(vcissq, Seq(vcs)))
+  }) ++ Seq(IssueGroup(vcissq, Seq(vcs))) // @@@@ + custom group
 
-  // ======================================
-  // Set inputs to each issq/sequencer pair
-
-  // Set common defaults
-  for (issq <- allIssQs) {
-    issq.io.enq.bits.reduction := false.B
-    issq.io.enq.bits.wide_vd := false.B
-    issq.io.enq.bits.wide_vs2 := false.B
-    issq.io.enq.bits.writes_mask := false.B
-    issq.io.enq.bits.reads_vs1_mask := false.B
-    issq.io.enq.bits.reads_vs2_mask := false.B
-    issq.io.enq.bits.nf_log2 := 0.U
-    issq.io.enq.bits.renv1 := false.B
-    issq.io.enq.bits.renv2 := false.B
-    issq.io.enq.bits.renvd := false.B
-    issq.io.enq.bits.renvm := false.B
-    issq.io.enq.bits.wvd   := false.B
-    issq.io.enq.bits.scalar_to_vd0 := false.B
-    issq.io.enq.bits.rs1_is_rs2 := false.B
-    // junseok_generate
-    issq.io.enq.bits.pid_flag := false.B // @@@@ pid 플래그 기본값 false로 설정
-  }
-
-  val dis_ctrl = Wire(new VectorDecodedControl(all_supported_insns, Seq(
-    Reduction, Wide2VD, Wide2VS2, WritesAsMask,
-    ReadsVS1AsMask, ReadsVS2AsMask, ReadsVS1, ReadsVS2, ReadsVD,
-    VMBitReadsVM, AlwaysReadsVM, WritesVD, WritesScalar, ScalarToVD0
-  ))).decode(vdq.io.deq.bits)
-
-  // Load sequencer
+  vlissq.io.enq.bits.reduction := false.B
+  vlissq.io.enq.bits.wide_vd := false.B
+  vlissq.io.enq.bits.wide_vs2 := false.B
+  vlissq.io.enq.bits.writes_mask := false.B
+  vlissq.io.enq.bits.reads_vs1_mask := false.B
+  vlissq.io.enq.bits.reads_vs2_mask := false.B
   vlissq.io.enq.bits.nf_log2 := log2_up(vdq.io.deq.bits.nf, 8)
+  vlissq.io.enq.bits.renv1 := false.B
+  vlissq.io.enq.bits.renv2 := false.B
+  vlissq.io.enq.bits.renvd := false.B
   vlissq.io.enq.bits.renvm := !vdq.io.deq.bits.vm
   vlissq.io.enq.bits.wvd   := true.B
+  vlissq.io.enq.bits.scalar_to_vd0 := false.B
+  vlissq.io.enq.bits.rs1_is_rs2 := false.B
+  vlissq.io.enq.bits.pid_flag := false.B // @@@@
 
-  // Store sequencer
+  vsissq.io.enq.bits.reduction := false.B
+  vsissq.io.enq.bits.wide_vd := false.B
+  vsissq.io.enq.bits.wide_vs2 := false.B
+  vsissq.io.enq.bits.writes_mask := false.B
+  vsissq.io.enq.bits.reads_vs1_mask := false.B
+  vsissq.io.enq.bits.reads_vs2_mask := false.B
   vsissq.io.enq.bits.nf_log2 := log2_up(vdq.io.deq.bits.nf, 8)
+  vsissq.io.enq.bits.renv1 := false.B
+  vsissq.io.enq.bits.renv2 := false.B
   vsissq.io.enq.bits.renvd := true.B
   vsissq.io.enq.bits.renvm := !vdq.io.deq.bits.vm && vdq.io.deq.bits.mop === mopUnit
+  vsissq.io.enq.bits.wvd   := false.B
+  vsissq.io.enq.bits.scalar_to_vd0 := false.B
+  vsissq.io.enq.bits.rs1_is_rs2 := false.B
+  vsissq.io.enq.bits.pid_flag := false.B // @@@@
 
-  // Permute source sequencer
-  vpissq.io.enq.bits.renv1 := !vdq.io.deq.bits.vmu && dis_ctrl.bool(Reduction)
-  vpissq.io.enq.bits.renv2 := (vdq.io.deq.bits.mop(0) || (!vdq.io.deq.bits.vmu && !dis_ctrl.bool(Reduction)))
-  vpissq.io.enq.bits.renvd := !dis_ctrl.bool(Reduction)
+  vpissq.io.enq.bits.reduction := false.B
+  vpissq.io.enq.bits.wide_vd := false.B
+  vpissq.io.enq.bits.wide_vs2 := false.B
+  vpissq.io.enq.bits.writes_mask := false.B
+  vpissq.io.enq.bits.reads_vs1_mask := false.B
+  vpissq.io.enq.bits.reads_vs2_mask := false.B
+  vpissq.io.enq.bits.nf_log2 := 0.U
+  vpissq.io.enq.bits.renv1 := false.B
+  vpissq.io.enq.bits.renv2 := vdq.io.deq.bits.mop(0) || !vdq.io.deq.bits.vmu
+  vpissq.io.enq.bits.renvd := true.B
   vpissq.io.enq.bits.renvm := !vdq.io.deq.bits.vm && vdq.io.deq.bits.mop =/= mopUnit && vdq.io.deq.bits.vmu
-  vpissq.io.enq.bits.wide_vd := dis_ctrl.bool(Wide2VD) && !vdq.io.deq.bits.vmu
+  vpissq.io.enq.bits.wvd   := false.B
+  vpissq.io.enq.bits.scalar_to_vd0 := false.B
   vpissq.io.enq.bits.rs1_is_rs2 := !vdq.io.deq.bits.vmu && (vdq.io.deq.bits.opif6 === OPIFunct6.rgather || (vdq.io.deq.bits.funct3 === OPIVV && vdq.io.deq.bits.opif6 === OPIFunct6.rgatherei16))
+  vpissq.io.enq.bits.pid_flag := false.B // @@@@
 
-  // Execute sequencers
+  val xdis_ctrl = new VectorDecoder(vdq.io.deq.bits.funct3, vdq.io.deq.bits.funct6, vdq.io.deq.bits.rs1, vdq.io.deq.bits.rs2, all_supported_insns,
+    Seq(Reduction, Wide2VD, Wide2VS2, WritesAsMask, ReadsVS1AsMask, ReadsVS2AsMask, ReadsVS1, ReadsVS2, ReadsVD,
+      VMBitReadsVM, AlwaysReadsVM, WritesVD, WritesScalar, ScalarToVD0))
   vxissqs.foreach { vxissq =>
-    vxissq.io.enq.bits.wide_vd := dis_ctrl.bool(Wide2VD)
-    vxissq.io.enq.bits.wide_vs2 := dis_ctrl.bool(Wide2VS2)
-    vxissq.io.enq.bits.writes_mask := dis_ctrl.bool(WritesAsMask)
-    vxissq.io.enq.bits.reads_vs1_mask := dis_ctrl.bool(ReadsVS1AsMask)
-    vxissq.io.enq.bits.reads_vs2_mask := dis_ctrl.bool(ReadsVS2AsMask)
-    vxissq.io.enq.bits.renv1 := dis_ctrl.bool(ReadsVS1) && !dis_ctrl.bool(Reduction)
-    vxissq.io.enq.bits.renv2 := dis_ctrl.bool(ReadsVS2)
-    vxissq.io.enq.bits.renvd := dis_ctrl.bool(ReadsVD)
-    vxissq.io.enq.bits.renvm := (!vdq.io.deq.bits.vm && dis_ctrl.bool(VMBitReadsVM)) || dis_ctrl.bool(AlwaysReadsVM)
-    vxissq.io.enq.bits.wvd := !dis_ctrl.bool(WritesScalar)
-    vxissq.io.enq.bits.scalar_to_vd0 := dis_ctrl.bool(ScalarToVD0)
-    vxissq.io.enq.bits.reduction := dis_ctrl.bool(Reduction)
+    vxissq.io.enq.bits.wide_vd := xdis_ctrl.bool(Wide2VD)
+    vxissq.io.enq.bits.wide_vs2 := xdis_ctrl.bool(Wide2VS2)
+    vxissq.io.enq.bits.writes_mask := xdis_ctrl.bool(WritesAsMask)
+    vxissq.io.enq.bits.reads_vs1_mask := xdis_ctrl.bool(ReadsVS1AsMask)
+    vxissq.io.enq.bits.reads_vs2_mask := xdis_ctrl.bool(ReadsVS2AsMask)
+    vxissq.io.enq.bits.nf_log2 := 0.U
+    vxissq.io.enq.bits.renv1 := xdis_ctrl.bool(ReadsVS1)
+    vxissq.io.enq.bits.renv2 := xdis_ctrl.bool(ReadsVS2)
+    vxissq.io.enq.bits.renvd := xdis_ctrl.bool(ReadsVD)
+    vxissq.io.enq.bits.renvm := (!vdq.io.deq.bits.vm && xdis_ctrl.bool(VMBitReadsVM)) || xdis_ctrl.bool(AlwaysReadsVM)
+    vxissq.io.enq.bits.wvd := !xdis_ctrl.bool(WritesScalar)
+    vxissq.io.enq.bits.scalar_to_vd0 := xdis_ctrl.bool(ScalarToVD0)
+    vxissq.io.enq.bits.reduction := xdis_ctrl.bool(Reduction)
+    vxissq.io.enq.bits.rs1_is_rs2 := false.B
+    vxissq.io.enq.bits.pid_flag := false.B // @@@@
   }
 
-  // junseok_generate
-  // @@@@ Custom sequencers
-  vcissq.io.enq.bits.pid_flag := vdq.io.deq.bits.opcustom // @@@@ pid 플래그 on
-  vcissq.io.enq.bits.renv2 := true.B // @@@@ vs2 읽는거 항상 허용 -> 차후에 vs2~vd 읽는 신호를 만들어야 할듯
-  vcissq.io.enq.bits.wvd := true.B // @@@@ vd 쓰는거 항상 허용 -> 차후에 vs2~vd 쓰는 신호를 만들어야 할듯
-
-  // ======================================
-  // Connect VDQ to issue queues
-  // Connect issue queues to sequencers
+  // @@@@ Custom issue queue enq fields (no shared default loop in 1.13.0, so set all)
+  vcissq.io.enq.bits.reduction := false.B
+  vcissq.io.enq.bits.wide_vd := false.B
+  vcissq.io.enq.bits.wide_vs2 := false.B
+  vcissq.io.enq.bits.writes_mask := false.B
+  vcissq.io.enq.bits.reads_vs1_mask := false.B
+  vcissq.io.enq.bits.reads_vs2_mask := false.B
+  vcissq.io.enq.bits.nf_log2 := 0.U
+  vcissq.io.enq.bits.renv1 := false.B
+  vcissq.io.enq.bits.renv2 := true.B  // @@@@ always read vs2
+  vcissq.io.enq.bits.renvd := false.B
+  vcissq.io.enq.bits.renvm := false.B
+  vcissq.io.enq.bits.wvd := true.B    // @@@@ always write vd
+  vcissq.io.enq.bits.scalar_to_vd0 := false.B
+  vcissq.io.enq.bits.rs1_is_rs2 := false.B
+  vcissq.io.enq.bits.pid_flag := vdq.io.deq.bits.opcustom // @@@@ pid flag on
 
   val issq_stall = Wire(Vec(issGroups.size, Bool()))
   vdq.io.deq.ready := !issq_stall.orR
-
-  var flat_vxu_id: Int = 0
 
   for ((group, i) <- issGroups.zipWithIndex) {
     val otherIssGroups = issGroups.zipWithIndex.filter(_._2 != i).map(_._1)
@@ -195,6 +197,13 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
 
       val vat = seq.io.vat
 
+      seq.io.rvs1 := DontCare
+      seq.io.rvs2 := DontCare
+      seq.io.rvd := DontCare
+      seq.io.rvm := DontCare
+      seq.io.perm := DontCare
+      seq.io.acc.valid := false.B
+      seq.io.acc.bits := DontCare
       seq.io.vat_head := io.vat_head
 
       val older_issq_wintents = FillInterleaved(egsPerVReg, otherIssqs.map { i =>
@@ -213,35 +222,22 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
       }.reduce(_|_)
       val older_rintents = older_issq_rintents | older_seq_rintents
 
-      val (other_vxus, same_vxu): (Seq[ExecutionUnit], Option[ExecutionUnit]) = seq match {
-        case s: ExecuteSequencer => {
-          val other_vxus = flat_vxus.zipWithIndex.filter(_._2 != flat_vxu_id).map(_._1)
-          val same_vxu = flat_vxus(flat_vxu_id)
-          flat_vxu_id += 1
-          (other_vxus, Some(same_vxu))
-        }
-        case _ => (flat_vxus, None)
-      }
+      val older_pipe_writes_vxu = vxus.flatten.map(_.io.pipe_hazards.toSeq).flatten.map { h =>
+        Mux(h.valid, h.bits.eg_oh, 0.U)
+      }.reduce(_|_)
+      // @@@@ slot 0 = issue-cycle hazard. 이것만이 콤비 루프를 만든다:
+      //   older_pipe_writes -> vcs.older_writes -> vcs.iss.valid -> vcu.iss.valid -> vcu.pipe_hazards(0) -> older_pipe_writes
+      //   slot 0은 발사 사이클에 vcs.seq_hazard(wintent, 같은 사이클)와 중복이므로 여기서 제외하면 루프가 끊긴다.
+      //   나머지 slot 1..7은 전부 registered 큐 스테이지라 iss로의 콤비 경로가 없다 → RegNext 지연 불필요.
+      //   (이전 RegNext는 모든 슬롯을 1사이클 늦춰, tail-iss 직후 seq_hazard가 꺼진 1사이클 동안 사각지대를 만들었음.)
+      val vcu_pipe_mask_now = vcu.io.pipe_hazards.toSeq.drop(1).map { h =>
+        Mux(h.valid, h.bits.eg_oh, 0.U)
+      }.foldLeft(0.U(egsTotal.W))(_|_)
+      val older_pipe_writes = older_pipe_writes_vxu | vcu_pipe_mask_now
 
-      // Older writes from adjacent VXUs will always induce WAW/RAW, but older
-      // writes from the same VXU may be from the same instruction, and no WAR
-      // or RAW is possible
-      val older_other_pipe_writes = other_vxus.map(_.io.pipe_hazards.toSeq).flatten.map { h =>
+      val older_iter_writes = vxus.flatten.map(_.io.iter_hazards.toSeq).flatten.map { h =>
         Mux(h.valid, h.bits.eg_oh, 0.U)
-      }.foldLeft(0.U)(_|_)
-      val older_same_pipe_writes = same_vxu.map(_.io.pipe_hazards.toSeq.map { h =>
-        Mux(h.valid && h.bits.vat =/= vat, h.bits.eg_oh, 0.U)
-      }.reduce(_|_)).getOrElse(0.U)
-      // junseok_generate
-      val vcu_pipe_mask_now = vcu.io.pipe_hazards.toSeq.map { h =>
-        Mux(h.valid, h.bits.eg_oh, 0.U)
-      }.foldLeft(0.U(egsTotal.W))(_|_)            // reduce 대신 foldLeft로 안전하게
-      val older_vcu_pipe_writes = RegNext(vcu_pipe_mask_now, 0.U(egsTotal.W))
-      val older_pipe_writes = older_other_pipe_writes | older_same_pipe_writes | older_vcu_pipe_writes
-      // junseok_modify
-      val older_iter_writes = flat_vxus.map(_.io.iter_hazards.toSeq).flatten.map { h =>
-        Mux(h.valid, h.bits.eg_oh, 0.U)
-      }.foldLeft(0.U)(_|_)
+      }.reduce(_|_)
 
       seq.io.older_writes := older_pipe_writes | older_iter_writes | older_wintents
       seq.io.older_reads := older_rintents
@@ -256,7 +252,7 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
       }
     }
 
-    val accepts = group.seqs.map(_.accepts(vdq.io.deq.bits)) // 여기서 보내고자 하는 path이면 그 issq로 매핑
+    val accepts = group.seqs.map(_.accepts(vdq.io.deq.bits))
     issq_stall(i) := !group.issq.io.enq.ready && accepts.orR
 
     group.issq.io.enq.valid := vdq.io.deq.valid && !issq_stall.orR && accepts.orR
@@ -266,300 +262,195 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
     // In case of multiple available sequencers, select the first ready one
     val valid_seqs = group.issq.io.deq.bits.seq
     val ready_seqs = VecInit(group.seqs.map(_.io.dis.ready)).asUInt
-    val chosen_seq = PriorityEncoderOH(valid_seqs & ready_seqs)
+    val chosen_seq = PriorityEncoder(valid_seqs & ready_seqs)
 
-    group.seqs.zipWithIndex.foreach { case(s, j) =>
-      s.io.dis.valid := group.issq.io.deq.valid && chosen_seq(j)
+    group.seqs.zipWithIndex.foreach{ case(s, j) =>
+      s.io.dis.valid := group.issq.io.deq.valid && chosen_seq === j.U
       s.io.dis.bits := group.issq.io.deq.bits.viewAsSupertype(new BackendIssueInst)
     }
     group.issq.io.deq.ready := (valid_seqs & ready_seqs) =/= 0.U
   }
 
-  // ======================================
-  // Connect reads to VRF
-  // junseok_modify
-  val vrf = Module(new RegisterAccess(flat_vxs.size + 1, maxPipeDepth)) // @@@@ vrf 슬롯 1개 증가
-  vrf.io.vls.rvm.req <> vls.io.rvm
-  vrf.io.vss.rvd.req <> vss.io.rvd
-  vrf.io.vss.rvm.req <> vss.io.rvm
-  vrf.io.vps.rvs2.req <> vps.io.rvs2
-  vrf.io.vps.rvm.req <> vps.io.rvm
-  vps.io.acc_init_resp := vrf.io.vps.rvs2.resp
+  val flat_vxs = vxs.flatten
+  val flat_vxus = vxus.flatten
+  require(flat_vxs.size == flat_vxus.size)
 
-  for (i <- 0 until flat_vxs.size) {
-    val vxs = flat_vxs(i)
-    val vxu = flat_vxus(i)
+  // Hazard checking for multi-VXS
+  // Check if there is a VRF write port hazard against the in-flight insns in other VXUs
+  // Check if there is a VRF write port hazard against a simultaneously issuing insn
+  //  from another VXS (check that it's actually a valid hazard)
+  val inflight_hazards = WireInit(VecInit(Seq.fill(flat_vxs.length)(false.B)))
+  for (i <- 0 until flat_vxs.length) {
+    val other_vxu_idx = (0 until flat_vxs.length).filter(_ != i)
 
-    vrf.io.vxs(i).rvs1.req <> vxs.io.rvs1
-    vrf.io.vxs(i).rvs2.req <> vxs.io.rvs2
-    vrf.io.vxs(i).rvd.req <> vxs.io.rvd
-    vrf.io.vxs(i).rvm.req <> vxs.io.rvm
+    val inflight_hazard = other_vxu_idx.map(flat_vxus(_).io.pipe_hazards).flatten.map { hazard =>
+      hazard.valid &&
+      (hazard.bits.latency === flat_vxus(i).io.issue_pipe_latency) &&
+      (hazard.bits.eg(vrfBankBits-1,0) === flat_vxs(i).io.iss.bits.wvd_eg(vrfBankBits-1,0))
+    }.reduceOption(_ || _).getOrElse(false.B)
 
-    val vxs_iss = vxs.io.iss.bits
-    val vxu_iss = vxu.io.iss.bits
+    inflight_hazards(i) := inflight_hazard
 
-    val rvs1_data = Mux1H(Seq(
-      vxs_iss.use_scalar_rvs1 -> dLenSplat(vxs_iss.scalar, vxs_iss.rvs1_eew),
-      vxs_iss.use_normal_rvs1 -> vrf.io.vxs(i).rvs1.resp))
-    val rvs2_data = Mux1H(Seq(
-      vxs_iss.use_zero_rvs2 -> 0.U,
-      vxs_iss.use_slide_rvs2 -> vxs_iss.slide_data,
-      vxs_iss.use_normal_rvs2 -> vrf.io.vxs(i).rvs2.resp))
-    val rvd_data = vrf.io.vxs(i).rvd.resp
+    val issue_hazard = other_vxu_idx.map { other_iss =>
+      (flat_vxus(other_iss).io.issue_pipe_latency === flat_vxus(i).io.issue_pipe_latency) &&
+      (flat_vxs(other_iss).io.iss.bits.wvd_eg(vrfBankBits-1,0) === flat_vxs(i).io.iss.bits.wvd_eg(vrfBankBits-1,0)) &&
+      vatOlder(flat_vxs(other_iss).io.iss.bits.vat, flat_vxs(i).io.iss.bits.vat) &&
+      !inflight_hazards(other_iss) &&
+      flat_vxs(other_iss).io.iss.valid &&
+      flat_vxus(other_iss).io.iss.ready
+    }.reduceOption(_ || _).getOrElse(false.B)
 
-    vxu_iss.rvs1_data := rvs1_data
-    vxu_iss.rvs2_data := rvs2_data
-    vxu_iss.rvd_data := rvd_data
-
-    val rvs1_elem = extractElem(rvs1_data, vxs_iss.rvs1_eew, vxs_iss.eidx)
-    val rvs2_elem = extractElem(rvs2_data, vxs_iss.rvs2_eew, vxs_iss.eidx)
-    val rvd_elem = extractElem(rvd_data, vxs_iss.rvd_eew, vxs_iss.eidx)
-
-    vxu_iss.rvs1_elem := rvs1_elem
-    vxu_iss.rvs2_elem := rvs2_elem
-    vxu_iss.rvd_elem := rvd_elem
-
-    val vm_off    = ((1 << dLenOffBits) - 1).U(log2Ceil(dLen).W)
-    val vm_eidx   = (vxs_iss.eidx & ~(vm_off >> vxs_iss.vd_eew))(log2Ceil(dLen)-1,0)
-    val vm_resp   = (vrf.io.vxs(i).rvm.resp >> vm_eidx)(dLenB-1,0)
-    val vm_mask   = Mux(vxs_iss.use_wmask,
-      VecInit.tabulate(4)({ sew => FillInterleaved(1 << sew, vm_resp)(dLenB-1,0) })(vxs_iss.vd_eew),
-      ~(0.U(dLenB.W))
-    )
-    vxu_iss.wmask := vxs_iss.eidx_mask & vm_mask
-    vxu_iss.rmask := Mux(vxs_iss.vm, ~(0.U(dLenB.W)), vm_resp)
-    vxu_iss.rvm_data := Mux(vxs_iss.vm, ~(0.U(dLen.W)), vrf.io.vxs(i).rvm.resp)
-
-    vxu.io.iss.valid := vxs.io.iss.valid
-    vxs.io.iss.ready := vxu.io.iss.ready
-    vxu.io.iss.bits.viewAsSupertype(new ExecuteMicroOp(vxu.nFUs)) := vxs.io.iss.bits
-
-    when (vxs_iss.acc) {
-      val acc_data = vps.io.acc_data.bits
-      when (vxs_iss.acc_fold) {
-        val acc_fold_id = vxs_iss.acc_fold_id
-        val folded = VecInit.tabulate(log2Ceil(dLenB))(i => acc_data((dLen >> i) - 1, dLen >> (i + 1)))(acc_fold_id)
-
-        vxu_iss.wmask := Mux(vxs_iss.tail, eewByteMask(vxs_iss.vd_eew), ~(0.U(dLenB.W)))
-        vxu_iss.rvs1_elem := Mux(vxs_iss.acc_copy, vps.io.acc_init, folded)
-        vxu_iss.rvs1_data := Mux(vxs_iss.acc_copy, vps.io.acc_init, folded)
-        vxu_iss.rvs1_eew := vxs_iss.vd_eew
-        vxu_iss.rvs2_elem := acc_data
-        vxu_iss.rvs2_data := acc_data
-        vxu_iss.rvs2_eew  := vxs_iss.vd_eew
-      } .otherwise {
-        when (vxs_iss.acc_ew) {
-          val mask_bit = Mux(vxs_iss.use_wmask, (vrf.io.vxs(i).rvm.resp >> vxs_iss.eidx(log2Ceil(dLen)-1,0))(0), true.B)
-          vxu_iss.wmask := Mux(mask_bit, eewByteMask(vxs_iss.vd_eew), 0.U)
-          vxu_iss.rvs1_elem := acc_data
-          vxu_iss.rvs1_data := acc_data
-          vxu_iss.rvs1_eew  := vxs_iss.vd_eew
-          vxu_iss.rvs2_data := rvs2_elem
-        } .otherwise {
-          vxu_iss.rvs1_data := acc_data
-          vxu_iss.rvs1_eew := vxs_iss.vd_eew
-        }
-      }
-    }
+    flat_vxus(i).io.iss.valid := flat_vxs(i).io.iss.valid && !inflight_hazard && !issue_hazard
+    flat_vxs(i).io.iss.ready := flat_vxus(i).io.iss.ready && !inflight_hazard && !issue_hazard
+    flat_vxus(i).io.iss.bits := flat_vxs(i).io.iss.bits
+    flat_vxs(i).io.acc := flat_vxus(i).io.acc_write
   }
 
-  val frontend_rindex = Wire(new VectorReadIO)
-  val frontend_rmask  = Wire(new VectorReadIO)
-  vrf.io.frontend.rindex <> frontend_rindex
-  vrf.io.frontend.rmask <> frontend_rmask
-
-  // ============================
-  // Connect writes to VRF
-  for (i <- 0 until flat_vxs.size) {
-    vrf.io.vxs(i).pipe_write_req <> flat_vxs(i).io.pipe_write_req
-    vrf.io.pipe_writes(i) <> flat_vxus(i).io.pipe_write
-    vrf.io.iter_writes(i) <> flat_vxus(i).io.iter_write
-  }
+  // Read ports are
+  // vxs0-vrs1, vxs1-vrs1, vmu-index, frontend-index
+  // vxs0-vrs2, vxs1-vrs2
+  // vxs0-vrs3, vxs1-vrs3, vss-vrd
+  // vxs0-mask, vxs1-mask, vls-mask, vss-mask, vps-mask, frontend-mask
+  // Mask ports are
+  // vxs0-mask, vxs1-mask, vls-mask, vss-mask, vps-mask, frontend-mask
+  val vrf = Module(new RegisterFile(
+    reads = Seq(2 + flat_vxs.size, flat_vxs.size + 1, 1 + flat_vxs.size), // @@@@ +1 rvs2 read for custom
+    maskReads = Seq(4 + flat_vxs.size),
+    pipeWrites = flat_vxus.size + 1, // @@@@ +1 write for custom
+    llWrites = flat_vxus.size + 2 // vxus + load + reset
+  ))
 
   val load_write = Wire(Decoupled(new VectorWrite(dLen)))
-  vrf.io.load_write <> load_write
-
-
   io.vmu.lresp.ready := vls.io.iss.valid && load_write.ready
   vls.io.iss.ready := io.vmu.lresp.valid && load_write.ready
   load_write.valid := vls.io.iss.valid && io.vmu.lresp.valid
   load_write.bits.eg   := vls.io.iss.bits.wvd_eg
-  load_write.bits.data := Fill(dLen / mLen, io.vmu.lresp.bits.data)
-  val load_wmask = Mux(vls.io.iss.bits.use_rmask,
-    get_vm_mask(vrf.io.vls.rvm.resp, vls.io.iss.bits.eidx, vls.io.iss.bits.elem_size, dLen),
-    ~(0.U(dLenB.W)))
-  load_write.bits.mask := FillInterleaved(8, vls.io.iss.bits.eidx_wmask & load_wmask)
+  load_write.bits.data := io.vmu.lresp.bits.data
+  load_write.bits.mask := FillInterleaved(8, vls.io.iss.bits.wmask)
   when (io.vmu.lresp.fire) {
     assert(io.vmu.lresp.bits.debug_id === vls.io.iss.bits.debug_id)
   }
 
-  // junseok_generate_start
-  // @@@@ vrf와 커스텀 포트 연결
-  val CustomIdx = flat_vxs.size // @@@@ 마지막 슬롯을 커스텀에 사용
-  vrf.io.vxs(CustomIdx).rvs1.req.valid := false.B
-  vrf.io.vxs(CustomIdx).rvd.req.valid  := false.B
-  vrf.io.vxs(CustomIdx).rvm.req.valid  := false.B
-  vrf.io.vxs(CustomIdx).rvs1.req.bits := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvs1.req.bits)
-  vrf.io.vxs(CustomIdx).rvd.req.bits  := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvd.req.bits)
-  vrf.io.vxs(CustomIdx).rvm.req.bits  := 0.U.asTypeOf(vrf.io.vxs(CustomIdx).rvm.req.bits)
-  vrf.io.iter_writes(CustomIdx).valid := false.B
-  vrf.io.iter_writes(CustomIdx).bits := 0.U.asTypeOf(vrf.io.iter_writes(CustomIdx).bits)
-  //============================================================
-  // 읽기
-  //============================================================
-  // 시퀀서의 rvs2 요청을 vrf에 직접 연결
-  vrf.io.vxs(CustomIdx).rvs2.req <> vcs.io.read_req
-  val rvs2_data = vrf.io.vxs(CustomIdx).rvs2.resp
-  vcu.io.rvs2_data := rvs2_data
+  val resetting = RegInit(true.B)
+  val reset_ctr = RegInit(0.U(log2Ceil(egsTotal).W))
+  when (resetting) {
+    reset_ctr := reset_ctr + 1.U
+    io.dis.ready := false.B
+  }
+  when (~reset_ctr === 0.U) { resetting := false.B }
 
-  // micro op와 데이터가 "같은 사이클에 같이" vcu로 들어가도록 핸드셰이크 맞춤
-  vcu.io.iss.valid := vcs.io.iss.valid
-  vcu.io.iss.bits.viewAsSupertype(new CustomExecuteMicroOp) := vcs.io.iss.bits
-  vcs.io.iss.ready := vcu.io.iss.ready
+  // Write ports
+  vrf.io.pipe_writes.zip(vxus.flatten).foreach { case (w,vxu) =>
+    w := vxu.io.pipe_write
+  }
+  vrf.io.pipe_writes(flat_vxus.size) := vcu.io.pipe_write // @@@@ custom write port
 
-  //============================================================
-  // 쓰기
-  //============================================================
-  vrf.io.vxs(CustomIdx).pipe_write_req <> vcs.io.pipe_write_req
-  vrf.io.pipe_writes(CustomIdx)        <> vcu.io.pipe_write
-  // junseok_generate_end
+  vrf.io.ll_writes(0) <> load_write
+  vrf.io.ll_writes(1).valid     := resetting
+  vrf.io.ll_writes(1).bits.eg   := reset_ctr
+  vrf.io.ll_writes(1).bits.data := 0.U
+  vrf.io.ll_writes(1).bits.mask := ~(0.U(dLen.W))
+  vxus.flatten.zipWithIndex.foreach { case (vxu,i) =>
+    vrf.io.ll_writes(2+i) <> vxu.io.iter_write
+  }
 
+  flat_vxs.zipWithIndex.foreach { case(xs, i) =>
+    vrf.io.read(0)(i) <> xs.io.rvs1
+    vrf.io.read(1)(i) <> xs.io.rvs2
+    vrf.io.read(2)(i) <> xs.io.rvd
+    vrf.io.mask_read(0)(i) <> xs.io.rvm
+  }
 
-  // ========================================
-  // Connect frontend index/mask access ports
-  // junseok_modify
+  vrf.io.read(0)(flat_vxs.length) <> vps.io.rvs2
+  vps.io.rvs1.req.ready := true.B
+
+  // @@@@ Custom unit: VRF rvs2 read (read group 1 extra port) + execution-unit wiring
+  vrf.io.read(1)(flat_vxs.size) <> vcs.io.rvs2
+  vcu.io.iss <> vcs.io.iss
+  vcu.io.rvs2_data := vcs.io.rvs2.resp // combinational read resp aligns with iss (same as ExecuteSequencer)
+
   val index_access_eg = getEgId(io.index_access.vrs, io.index_access.eidx, io.index_access.eew, false.B)
   val index_access_eg_oh = UIntToOH(index_access_eg)
-  val index_access_hazard = ((allSeqs.map(_.io.seq_hazard).map { h =>
+  val index_access_hazard = (allSeqs.map(_.io.seq_hazard).map { h =>
     h.valid && ((h.bits.wintent & index_access_eg_oh) =/= 0.U)
   } ++ allIssQs.map(_.io.hazards).flatten.map { h =>
     h.valid && h.bits.wintent(io.index_access.vrs)
   } ++ vxus.flatten.map(_.io.pipe_hazards).flatten.map { h =>
     h.valid && h.bits.eg === index_access_eg
   } ++ vxus.flatten.map(_.io.iter_hazards).flatten.map { h =>
-    h.valid && h.bits.eg === index_access_eg // @@@@
-  } ++ vcu.io.pipe_hazards.toSeq.map { h =>  // @@@@
     h.valid && h.bits.eg === index_access_eg
-  }).orR ||
-    vdq.io.peek.map(i => i.valid && !(i.bits.vmu && i.bits.store)).orR
-  )
+  } ++ vcu.io.pipe_hazards.toSeq.map { h => // @@@@ + custom
+    h.valid && h.bits.eg === index_access_eg
+  }).orR || vdq.io.peek.map(i => i.valid && !(i.bits.vmu && i.bits.store)).orR
   // TODO: this conservatively assumes a index data hazard against anything in the vdq
 
-  frontend_rindex.req.valid := io.index_access.valid
-  io.index_access.ready := frontend_rindex.req.ready && !index_access_hazard
-  frontend_rindex.req.bits.eg  := index_access_eg
-  frontend_rindex.req.bits.oldest  := false.B
-  io.index_access.idx   := frontend_rindex.resp >> ((io.index_access.eidx << io.index_access.eew)(dLenOffBits-1,0) << 3) & eewBitMask(io.index_access.eew)
+  vrf.io.read(0)(flat_vxs.size+1).req.valid := io.index_access.valid && !index_access_hazard
+  io.index_access.ready := vrf.io.read(0)(flat_vxs.size+1).req.ready && !index_access_hazard
+  vrf.io.read(0)(flat_vxs.size+1).req.bits.eg  := index_access_eg
+  vrf.io.read(0)(flat_vxs.size+1).req.bits.oldest  := false.B
+  io.index_access.idx   := vrf.io.read(0)(flat_vxs.size+1).resp >> ((io.index_access.eidx << io.index_access.eew)(dLenOffBits-1,0) << 3) & eewBitMask(io.index_access.eew)
 
+  vrf.io.read(2)(flat_vxs.size) <> vss.io.rvd
+  io.vmu.sdata.valid   := vss.io.iss.valid
+  io.vmu.sdata.bits    := vss.io.iss.bits
+  vss.io.iss.ready     := io.vmu.sdata.ready
+
+  vrf.io.mask_read(0)(flat_vxs.length) <> vls.io.rvm
+  vrf.io.mask_read(0)(flat_vxs.length+1) <> vss.io.rvm
+  vrf.io.mask_read(0)(flat_vxs.length+2) <> vps.io.rvm
   val vm_busy = Wire(Bool())
-  frontend_rmask.req.valid    := io.mask_access.valid
-  frontend_rmask.req.bits.eg  := getEgId(0.U, io.mask_access.eidx, 0.U, true.B)
-  frontend_rmask.req.bits.oldest := false.B
-  io.mask_access.ready  := frontend_rmask.req.ready && !vm_busy
-  io.mask_access.mask   := frontend_rmask.resp >> io.mask_access.eidx(log2Ceil(dLen)-1,0)
+  vrf.io.mask_read(0)(flat_vxs.length+3).req.valid    := io.mask_access.valid && !vm_busy
+  vrf.io.mask_read(0)(flat_vxs.length+3).req.bits.eg  := getEgId(0.U, io.mask_access.eidx, 0.U, true.B)
+  vrf.io.mask_read(0)(flat_vxs.length+3).req.bits.oldest := false.B
+  io.mask_access.ready  := vrf.io.mask_read(0)(flat_vxs.length+3).req.ready && !vm_busy
+  io.mask_access.mask   := vrf.io.mask_read(0)(flat_vxs.length+3).resp >> io.mask_access.eidx(log2Ceil(dLen)-1,0)
 
-  // =====================================
-  // Connect VMU index/mask access ports
 
-  val vmu_index_q = Module(new Compactor(dLenB, mLenB, UInt(8.W), false))
-  val vmu_mask_q = Module(new Compactor(dLenB, mLenB, Bool(), false))
-  val vgu = Module(new GatherUnit)
+  val vmu_index_q = Module(new Compactor(dLenB, dLenB, UInt(8.W), false))
+  val vmu_mask_q = Module(new Compactor(dLenB, dLenB, Bool(), false))
+  val perm_q = Module(new DCEQueue(new PermuteMicroOp, 2))
 
-  vmu_index_q.io.push_data      := vrf.io.vps.rvs2.resp.asTypeOf(Vec(dLenB, UInt(8.W)))
+  vmu_index_q.io.push_data      := vps.io.iss.bits.rvs2_data.asTypeOf(Vec(dLenB, UInt(8.W)))
   vmu_index_q.io.push.bits.head := vps.io.iss.bits.eidx << vps.io.iss.bits.rvs2_eew
   vmu_index_q.io.push.bits.tail := Mux(vps.io.iss.bits.tail,
     vps.io.iss.bits.vl << vps.io.iss.bits.rvs2_eew,
     0.U)
 
-  vmu_mask_q.io.push_data       := Mux(vps.io.iss.bits.renvm,
-    (vrf.io.vps.rvm.resp >> vps.io.iss.bits.eidx(log2Ceil(dLen)-1,0))(dLenB-1,0),
-    ~(0.U(dLenB.W))
-  ).asBools
+  vmu_mask_q.io.push_data       := (vps.io.iss.bits.rvm_data >> vps.io.iss.bits.eidx(log2Ceil(dLen)-1,0))(dLenB-1,0).asBools
   vmu_mask_q.io.push.bits.head  := 0.U
-  vmu_mask_q.io.push.bits.tail  := (Mux(vmu_index_q.io.push.bits.tail === 0.U, dLenB.U, vmu_index_q.io.push.bits.tail) - vmu_index_q.io.push.bits.head) >> vps.io.iss.bits.rvs2_eew
+  vmu_mask_q.io.push.bits.tail  := Mux(vps.io.iss.bits.tail, vps.io.iss.bits.vl, 0.U) - vps.io.iss.bits.eidx
+
 
   vps.io.iss.ready := Mux(vps.io.iss.bits.vmu,
     vmu_index_q.io.push.ready && vmu_mask_q.io.push.ready,
-    vgu.io.vps.ready)
+    perm_q.io.enq.ready)
 
   vmu_index_q.io.push.valid := vps.io.iss.valid && vps.io.iss.bits.vmu && vps.io.iss.bits.renv2 && vps.io.iss.ready
   vmu_mask_q.io.push.valid  := vps.io.iss.valid && vps.io.iss.bits.vmu && vps.io.iss.bits.renvm && vps.io.iss.ready
-
-  io.vmu.sdata.valid   := vss.io.iss.valid
-  vss.io.iss.ready     := io.vmu.sdata.ready
-  val iss_stdata = if (mLen < dLen) {
-    val select = (vss.io.iss.bits.eidx << vss.io.iss.bits.elem_size)(dLenOffBits-1,mLenOffBits)
-    vrf.io.vss.rvd.resp.asTypeOf(Vec(dLen/mLen, UInt(mLen.W)))(select)
-  } else {
-    vrf.io.vss.rvd.resp
-  }
-  io.vmu.sdata.bits.stdata    := iss_stdata
-  io.vmu.sdata.bits.stmask    := vss.io.iss.bits.eidx_mask & Mux(vss.io.iss.bits.use_stmask,
-    get_vm_mask(vrf.io.vss.rvm.resp, vss.io.iss.bits.eidx, vss.io.iss.bits.elem_size, mLen),
-    ~(0.U(mLenB.W))
-  )
-  io.vmu.sdata.bits.debug_id := vss.io.iss.bits.debug_id
-
 
   io.vmu.mask_pop   <> vmu_mask_q.io.pop
   io.vmu.mask_data  := vmu_mask_q.io.pop_data
   io.vmu.index_pop  <> vmu_index_q.io.pop
   io.vmu.index_data := vmu_index_q.io.pop_data
 
-  // ==================================
-  // Connect Permute-to-Execute path
+  perm_q.io.enq.valid := vps.io.iss.valid && !vps.io.iss.bits.vmu
+  perm_q.io.enq.bits := vps.io.iss.bits
 
-  vgu.io.vps.valid := vps.io.iss.valid && !vps.io.iss.bits.vmu
-  vgu.io.vps.bits.viewAsSupertype(new SpecialMicroOp) := vps.io.iss.bits
-  vgu.io.vps.bits.rvs2_data := vrf.io.vps.rvs2.resp
+  perm_q.io.deq.ready := perm_buffer.io.push.ready
+  perm_buffer.io.push.valid := perm_q.io.deq.valid
+  perm_buffer.io.push.bits.head := perm_q.io.deq.bits.eidx << perm_q.io.deq.bits.rvs2_eew
+  perm_buffer.io.push.bits.tail := Mux(perm_q.io.deq.bits.tail,
+    perm_q.io.deq.bits.vl << perm_q.io.deq.bits.rvs2_eew,
+    0.U)
+  perm_buffer.io.push_data := perm_q.io.deq.bits.rvs2_data.asTypeOf(Vec(dLenB, UInt(8.W)))
 
-  // Only the first VSU can handle permutations TODO clean this up
-  flat_vxs.foreach(_.io.vgu.slide_req.ready := false.B)
-  flat_vxs.foreach(_.io.vgu.slide_data := DontCare)
-  flat_vxs.foreach(_.io.vgu.gather_eidx.valid := false.B)
-  flat_vxs.foreach(_.io.vgu.gather_eidx.bits := DontCare)
-
-  val perm_vxs = flat_vxs.filter(_.usesPerm)
-  require(perm_vxs.size == 1)
-  vgu.io.vxs <> perm_vxs.head.io.vgu
-
-  // =================================
-  // Connect ReductionSeq to sequencer
-
-  vps.io.acc_data.ready := false.B
-  vps.io.acc_done := false.B
-  for (vxs <- flat_vxs) {
-    vxs.io.acc_valid := false.B
-    if (vxs.usesAcc) {
-      when (vxs.io.vat === vps.io.vat && vxs.io.busy) {
-        vps.io.acc_data.ready := vxs.io.acc_ready
-        vxs.io.acc_valid := vps.io.acc_data.valid
-        when (vxs.io.iss.fire && vxs.io.iss.bits.tail) {
-          vps.io.acc_done := true.B
-        }
-      }
-    }
-  }
-
-  // ==============================
-  // Connect ReductionSeq to writebacks
-
-  val acc_wbs = flat_vxus.map(_.io.acc_write)
-  assert(PopCount(acc_wbs.map(_.valid)) <= 1.U)
-
-  vps.io.acc_fu_resp.valid := acc_wbs.map(_.valid).orR
-  vps.io.acc_fu_resp.bits := Mux1H(acc_wbs.map(_.valid), acc_wbs.map(_.bits))
+  perm_buffer.io.pop <> vxs.head.head.io.perm.req
+  vxs.head.head.io.perm.data := perm_buffer.io.pop_data.asUInt
 
   // Clear the age tags
   var r_idx = 0
-  // junseok_generate
-  // clearVat 호출 후 남은 포트를 명시적으로 무효화
-  for (i <- 0 until nRelease) {
-    io.vat_release(i).valid := false.B
-    io.vat_release(i).bits := 0.U
-  }
   def clearVat(fire: Bool, tag: UInt) = {
-    require(r_idx < nRelease) // junseok_modify
+    assert(r_idx < nRelease)
     io.vat_release(r_idx).valid := fire
     io.vat_release(r_idx).bits := tag
     r_idx += 1
@@ -568,10 +459,8 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
   clearVat(vls.io.iss.fire && vls.io.iss.bits.tail, vls.io.iss.bits.vat)
   clearVat(vss.io.iss.fire && vss.io.iss.bits.tail, vss.io.iss.bits.vat)
   vxs.flatten.foreach(xs => clearVat(xs.io.iss.fire && xs.io.iss.bits.tail, xs.io.iss.bits.vat))
-  // junseok_modify
-  // vcu clearing age tag
-  clearVat(vcs.io.iss.fire && vcs.io.iss.bits.tail, vcs.io.iss.bits.vat)
-  require(r_idx == nRelease, s"vat_release fanout mismatch: produced $r_idx, expected $nRelease") // junseok_modify
+  clearVat(vcs.io.iss.fire && vcs.io.iss.bits.tail, vcs.io.iss.bits.vat) // @@@@ custom
+
   // Signalling to frontend
   val seq_inflight_wv0 = (allSeqs.map(_.io.seq_hazard).map { h =>
     h.valid && ((h.bits.wintent & ~(0.U(egsPerVReg.W))) =/= 0.U)
@@ -580,8 +469,8 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
   } ++ vxus.flatten.map(_.io.pipe_hazards).flatten.map { h =>
     h.valid && (h.bits.eg < egsPerVReg.U)
   } ++ vxus.flatten.map(_.io.iter_hazards).flatten.map { h =>
-    h.valid && (h.bits.eg < egsPerVReg.U) // @@@@junseok_modify
-  } ++ vcu.io.pipe_hazards.toSeq.map { h => // @@@@junseok_modify
+    h.valid && (h.bits.eg < egsPerVReg.U)
+  } ++ vcu.io.pipe_hazards.toSeq.map { h => // @@@@ + custom
     h.valid && (h.bits.eg < egsPerVReg.U)
   }).orR
   val vdq_inflight_wv0 = vdq.io.peek.map { h =>
@@ -589,7 +478,7 @@ class VectorBackend(implicit p: Parameters) extends CoreModule()(p) with HasVect
   }.orR
 
   vm_busy := seq_inflight_wv0 || vdq_inflight_wv0
-  io.busy := vdq.io.deq.valid || allSeqs.map(_.io.busy).orR || vxus.flatten.map(_.io.busy).asUInt.orR || vcu.io.busy // @@@@junseok_modify
+  io.busy := vdq.io.deq.valid || allSeqs.map(_.io.busy).orR || vxus.flatten.map(_.io.busy).asUInt.orR || vcu.io.busy || resetting // @@@@ + custom
   io.set_vxsat := vxus.flatten.map(_.io.set_vxsat).asUInt.orR
   io.set_fflags.valid := vxus.flatten.map(_.io.set_fflags.valid).asUInt.orR
   io.set_fflags.bits  := vxus.flatten.map( xu => Mux(xu.io.set_fflags.valid, xu.io.set_fflags.bits, 0.U)).reduce(_|_)

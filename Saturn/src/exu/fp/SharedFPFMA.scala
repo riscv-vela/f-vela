@@ -9,11 +9,6 @@ import freechips.rocketchip.tile._
 import saturn.common._
 import saturn.insns._
 
-case class SharedScalarFPFMAFactory(depth: Int) extends FMAFactory {
-  def insns = base_insns.map(_.elementWise)
-  def generate(implicit p: Parameters) = new SharedScalarElementwiseFPFMA(depth)
-}
-
 trait HasSharedFPUIO {
   implicit val p: Parameters
   val io_fp_req = IO(Decoupled(new FPInput()))
@@ -25,9 +20,9 @@ class SharedScalarElementwiseFPFMA(depth: Int)(implicit p: Parameters) extends P
     with HasFPUParameters
     with HasSharedFPUIO {
 
-  val supported_insns = SharedScalarFPFMAFactory(depth).insns
+  val supported_insns = FPFMAFactory(depth, true).insns
 
-  val ctrl = new VectorDecoder(io.pipe(0).bits, supported_insns, Seq(
+  val ctrl = new VectorDecoder(io.pipe(0).bits.funct3, io.pipe(0).bits.funct6, 0.U, 0.U, supported_insns, Seq(
     FPAdd, FPMul, FPSwapVdV2, FPFMACmd, ReadsVD, FPSpecRM, Wide2VD, Wide2VS2, Reduction))
 
   val vs1_eew = io.pipe(0).bits.rvs1_eew
@@ -39,7 +34,7 @@ class SharedScalarElementwiseFPFMA(depth: Int)(implicit p: Parameters) extends P
   val eidx = Mux(io.pipe(0).bits.acc, 0.U, io.pipe(0).bits.eidx)
 
   // Functional unit is ready if not currently running and the scalar FPU is available
-  io.stall := !io_fp_req.ready
+  io.iss.ready := new VectorDecoder(io.iss.op.funct3, io.iss.op.funct6, 0.U, 0.U, supported_insns, Nil).matched
 
   io_fp_active := io.pipe.tail.map(_.valid).orR // head is pipe0, issuing the request
 
@@ -114,9 +109,9 @@ class SharedScalarElementwiseFPFMA(depth: Int)(implicit p: Parameters) extends P
     req.in1 := rvd_recoded
   } .elsewhen (vs2_eew === 3.U) {
     req.in1 := d_rvs2
-  } .elsewhen ((vd_eew === 3.U) && (vs2_eew === 2.U)) {
+  } .elsewhen (ctrl.bool(Wide2VD) && vd_eew64) {
     req.in1 := s_widen_rvs2.io.out
-  } .elsewhen ((vd_eew === 2.U) && (vs2_eew === 1.U)) {
+  } .elsewhen (ctrl.bool(Wide2VD) && vd_eew32) {
     req.in1 := h_widen_rvs2.io.out
   } .elsewhen (vs2_eew === 2.U) {
     req.in1 := s_rvs2
@@ -127,9 +122,9 @@ class SharedScalarElementwiseFPFMA(depth: Int)(implicit p: Parameters) extends P
   // Set req.in2
   when (vs1_eew === 3.U) {
     req.in2 := d_rvs1
-  } .elsewhen ((vd_eew === 3.U) && (vs1_eew === 2.U) && !io.pipe(0).bits.acc) {
+  } .elsewhen (ctrl.bool(Wide2VD) && (vs1_eew === 2.U) && !io.pipe(0).bits.acc) {
     req.in2 := s_widen_rvs1.io.out
-  } .elsewhen ((vd_eew === 2.U) && (vs1_eew === 1.U) && !io.pipe(0).bits.acc) {
+  } .elsewhen (ctrl.bool(Wide2VD) && (vs1_eew === 1.U) && !io.pipe(0).bits.acc) {
     req.in2 := h_widen_rvs1.io.out
   } .elsewhen (vs1_eew === 2.U) {
     req.in2 := s_rvs1
@@ -146,7 +141,7 @@ class SharedScalarElementwiseFPFMA(depth: Int)(implicit p: Parameters) extends P
 
   io_fp_req.bits := req
   io_fp_req.valid := io.pipe(0).valid
-  when (io_fp_req.valid) { assert(io_fp_req.ready) }
+  io.pipe0_stall := !io_fp_req.ready
 
   when (io.pipe(depth-1).valid) { assert(io_fp_resp.valid) }
   io.write.valid := io.pipe(depth-1).valid

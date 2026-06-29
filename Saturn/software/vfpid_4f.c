@@ -20,7 +20,7 @@ int main() {
     };
     float dt = 0.1f;
     int start, end;
-    __asm__ volatile ("csrr %0, mcycle" : "=r"(start) :: "memory");
+    __asm__ volatile ("csrr %0, cycle" : "=r"(start) :: "memory"); // cycle(user) — mcycle은 유저모드 트랩
     __asm__ volatile (
         "vsetivli t0, 8, e32, m1, ta, ma\n\t"
         "flw fa0, (%1)\n\t"
@@ -49,7 +49,18 @@ int main() {
         : "r"(actuator), "r"(&dt)
         : "v1", "v2", "v3", "v4", "fa0", "t0", "t1", "memory"
     );
-    __asm__ volatile ("csrr %0, mcycle" : "=r"(end) :: "memory");
+    __asm__ volatile ("csrr %0, cycle" : "=r"(end) :: "memory"); // cycle(user)
     int a = end - start;
+
+    // 결과 출력 (각 벡터 = 한 actuator의 8개 e32 원소: sp,cp,Kp,Ki,Kd,I_prev,err_prev,out)
+    printf("vfpid_4f cycles: %d\n", a);
+    float *vp = (float *)actuator;
+    for (int v = 0; v < N; v++) {
+        printf("v%d:", v + 1);
+        for (int e = 0; e < 8; e++) {
+            printf(" %f", vp[v * 8 + e]);
+        }
+        printf("\n");
+    }
     return 0;
 }

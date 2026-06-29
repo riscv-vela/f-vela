@@ -10,10 +10,10 @@ import saturn.common._
 import saturn.insns.{VectorInstruction}
 
 abstract class FunctionalUnitIO(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
-  val stall = Output(Bool())
   val iss = new Bundle {
     val valid = Input(Bool())
-    val op = Input(new ExecuteMicroOpWithData(1))
+    val op = Input(new ExecuteMicroOp)
+    val ready = Output(Bool())
   }
 
   val scalar_write = Decoupled(new ScalarWrite)
@@ -22,9 +22,9 @@ abstract class FunctionalUnitIO(implicit p: Parameters) extends CoreBundle()(p) 
 }
 
 class PipelinedFunctionalUnitIO(depth: Int)(implicit p: Parameters) extends FunctionalUnitIO {
-  require(depth <= 8)
   val write = Valid(new VectorWrite(dLen))
-  val pipe = Input(Vec(depth, Valid(new ExecuteMicroOpWithData(1))))
+  val pipe = Input(Vec(depth, Valid(new ExecuteMicroOp)))
+  val pipe0_stall = Output(Bool())
 }
 
 class IterativeFunctionalUnitIO(implicit p: Parameters) extends FunctionalUnitIO {
@@ -68,13 +68,14 @@ abstract class IterativeFunctionalUnit(implicit p: Parameters) extends Functiona
   val io = IO(new IterativeFunctionalUnitIO)
 
   val valid = RegInit(false.B)
-  val op = Reg(new ExecuteMicroOpWithData(1))
+  val op = Reg(new ExecuteMicroOp)
   val last = Wire(Bool())
 
   io.busy := valid
 
-  when (io.iss.valid) {
-    assert(!valid || last)
+  io.hazard.bits.latency := DontCare
+
+  when (io.iss.valid && io.iss.ready) {
     valid := true.B
     op := io.iss.op
   } .elsewhen (last) {

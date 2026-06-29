@@ -17,13 +17,13 @@ import shuttle.common._
 
 
 class SaturnShuttleUnit(implicit p: Parameters) extends ShuttleVectorUnit()(p) with HasVectorParams with HasCoreParameters {
-  assert(!vParams.useScalarFPFMA)
+  assert(!vParams.useScalarFPFMA && !vParams.useScalarFPMisc)
   if (vParams.useScalarFPFMA) {
     require(coreParams.fpu.get.dfmaLatency == vParams.fmaPipeDepth - 1)
   }
 
   val tl_if = LazyModule(new TLSplitInterface)
-  atlNode := TLBuffer(vParams.tlBuffer) := TLWidthWidget(mLenB) := tl_if.node
+  atlNode := TLBuffer(vParams.tlBuffer) := TLWidthWidget(dLenB) := tl_if.node
 
   val sg_if = sgNode.map { n =>
     val sg_if = LazyModule(new SGTLInterface)

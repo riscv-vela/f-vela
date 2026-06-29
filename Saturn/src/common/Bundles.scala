@@ -7,9 +7,6 @@ import freechips.rocketchip.rocket._
 import freechips.rocketchip.util._
 import freechips.rocketchip.tile._
 
-import saturn.insns.{HasVectorDecoderSignals}
-
-// Per-instruction bundle in the VLSU
 class VectorMemMacroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
   val debug_id = UInt(debugIdSz.W)
 
@@ -37,12 +34,11 @@ class VectorMemMacroOp(implicit p: Parameters) extends CoreBundle()(p) with HasV
   def wr_nf = Mux(whole_reg, nf, 0.U)
 }
 
-// Bundle between VDQ and Backend
-class VectorIssueInst(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams with HasVectorDecoderSignals {
+
+class VectorIssueInst(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
   val pc = UInt(vaddrBitsExtended.W)
   val bits = UInt(32.W)
   val vconfig = new VConfig
-  val fission_vl = Valid(UInt((1+log2Ceil(maxVLMax)).W))
 
   val vstart = UInt(log2Ceil(maxVLMax).W)
   val segstart = UInt(3.W)
@@ -79,7 +75,6 @@ class VectorIssueInst(implicit p: Parameters) extends CoreBundle()(p) with HasVe
   def funct6 = bits(31,26)
   def writes_xrf = !vmu && ((funct3 === OPMVV && opmf6 === OPMFunct6.wrxunary0) || (funct3 === OPFVV && opff6 === OPFFunct6.wrfunary0))
   def writes_frf = !vmu && (funct3 === OPFVV)
-  def sew = vconfig.vtype.vsew
 
   def isOpi = funct3.isOneOf(OPIVV, OPIVI, OPIVX)
   def isOpm = funct3.isOneOf(OPMVV, OPMVX)
@@ -88,7 +83,7 @@ class VectorIssueInst(implicit p: Parameters) extends CoreBundle()(p) with HasVe
   def opmf6 = Mux(isOpm, OPMFunct6(funct6), OPMFunct6.illegal)
   def opif6 = Mux(isOpi, OPIFunct6(funct6), OPIFunct6.illegal)
   def opff6 = Mux(isOpf, OPFFunct6(funct6), OPFFunct6.illegal)
-  def opcustom = Mux(funct6 === F6_PID64B || funct6 === F6_PID32B, true.B, false.B) // junseok_generate@@@@ pid 플래그
+  def opcustom = Mux(funct6 === F6_PID64B || funct6 === F6_PID32B, true.B, false.B) // @@@@ Custom: pid flag
 }
 
 class BackendIssueInst(implicit p: Parameters) extends VectorIssueInst()(p) {
@@ -107,20 +102,11 @@ class BackendIssueInst(implicit p: Parameters) extends VectorIssueInst()(p) {
   val renvd = Bool()
   val renvm = Bool()
   val wvd = Bool()
-  val pid_flag = Bool() // junseok_generate@@@@ custom to use issuequeue
+  val pid_flag = Bool() // @@@@ Custom: route to custom issue queue
 }
 
 class IssueQueueInst(nSeqs: Int)(implicit p: Parameters) extends BackendIssueInst()(p) {
   val seq = UInt(nSeqs.W)
-}
-
-class VectorPipeWriteReqIO(maxPipeDepth: Int)(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
-  val request = Output(Bool())
-  val available = Input(Bool())
-  val fire = Output(Bool())
-  val bank_sel = Output(UInt(vParams.vrfBanking.W))
-  val pipe_depth = Output(UInt((log2Ceil(maxPipeDepth) max 1).W))
-  val oldest = Output(Bool())
 }
 
 class VectorWrite(writeBits: Int)(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
@@ -169,39 +155,28 @@ class MaskedByte(implicit p: Parameters) extends CoreBundle()(p) with HasVectorP
   val mask = Bool()
 }
 
-class ExecuteMicroOp(nFUs: Int)(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams with HasVectorDecoderSignals {
-  val fu_sel = UInt(nFUs.W)
+class ExecuteMicroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
   val eidx = UInt(log2Ceil(maxVLMax).W)
   val vl = UInt((1+log2Ceil(maxVLMax)).W)
+
+  val rvs1_data = UInt(dLen.W)
+  val rvs2_data = UInt(dLen.W)
+  val rvd_data  = UInt(dLen.W)
+  val rvm_data  = UInt(dLen.W)
+
+  val rvs1_elem = UInt(64.W)
+  val rvs2_elem = UInt(64.W)
+  val rvd_elem  = UInt(64.W)
 
   val rvs1_eew = UInt(2.W)
   val rvs2_eew = UInt(2.W)
   val rvd_eew = UInt(2.W)
   val vd_eew  = UInt(2.W)
-  val sew     = UInt(2.W)
 
-  val scalar = UInt(64.W)
+  val rmask   = UInt(dLenB.W)
+  val wmask   = UInt(dLenB.W)
 
-  val use_scalar_rvs1 = Bool()
-  def use_normal_rvs1 = !use_scalar_rvs1
-
-  val use_zero_rvs2 = Bool()
-  val use_slide_rvs2 = Bool()
-  def use_normal_rvs2 = !use_zero_rvs2 && !use_slide_rvs2
-
-  val slide_data = UInt(dLen.W)
-  val use_wmask = Bool()
-  val eidx_mask = UInt(dLenB.W)
   val full_tail_mask = UInt(dLen.W)
-  val rm       = UInt(3.W)
-  val acc      = Bool()
-  val acc_copy = Bool()
-  val acc_fold = Bool()
-  val acc_fold_id = UInt(log2Ceil(dLenB).W)
-  val acc_ew   = Bool()
-
-  val iterative = Bool()
-  val pipe_depth = UInt(3.W)
 
   val wvd_eg   = UInt(log2Ceil(egsTotal).W)
 
@@ -228,64 +203,53 @@ class ExecuteMicroOp(nFUs: Int)(implicit p: Parameters) extends CoreBundle()(p) 
   val head = Bool()
   val tail = Bool()
   val vat = UInt(vParams.vatSz.W)
+  val acc = Bool()
+
+  val rm = UInt(3.W)
   def vxrm = rm(1,0)
   def frm = rm
 }
 
-class ExecuteMicroOpWithData(nFUs: Int)(implicit p: Parameters) extends ExecuteMicroOp(nFUs) {
-  val rmask   = UInt(dLenB.W)
-  val wmask   = UInt(dLenB.W)
-
-  val rvs1_data = UInt(dLen.W)
-  val rvs2_data = UInt(dLen.W)
-  val rvd_data  = UInt(dLen.W)
-  val rvm_data  = UInt(dLen.W)
-
-  val rvs1_elem = UInt(64.W)
-  val rvs2_elem = UInt(64.W)
-  val rvd_elem  = UInt(64.W)
-}
-
 class StoreDataMicroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
-  val use_stmask = Bool()
-  val elem_size = UInt(2.W)
-  val eidx = UInt(log2Ceil(maxVLMax).W)
-  val eidx_mask = UInt(mLenB.W)
+  val stdata = UInt(dLen.W)
+  val stmask = UInt(dLenB.W)
   val debug_id = UInt(debugIdSz.W)
   val tail = Bool()
   val vat = UInt(vParams.vatSz.W)
+  def asMaskedBytes = {
+    val bytes = Wire(Vec(dLenB, new MaskedByte))
+    for (i <- 0 until dLenB) {
+      bytes(i).data := stdata(((i+1)*8)-1,i*8)
+      bytes(i).mask := stmask(i)
+      bytes(i).debug_id := debug_id
+    }
+    bytes
+  }
 }
 
 class LoadRespMicroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
-  val eidx_wmask = UInt(dLenB.W)
-  val use_rmask = Bool()
   val wvd_eg = UInt(log2Ceil(egsTotal).W)
-  val elem_size = UInt(2.W)
-  val eidx = UInt(log2Ceil(maxVLMax).W)
+  val wmask = UInt(dLenB.W)
   val tail = Bool()
   val debug_id = UInt(debugIdSz.W)
   val vat = UInt(vParams.vatSz.W)
 }
 
-class SpecialMicroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
-  val slide = Bool()
+class PermuteMicroOp(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
   val renv2 = Bool()
   val renvm = Bool()
+  val rvs2_data = UInt(dLen.W)
   val eidx = UInt(log2Ceil(maxVLMax).W)
   val rvs2_eew = UInt(2.W)
-  val sew = UInt(2.W)
+  val rvm_data = UInt(dLen.W)
   val vmu = Bool()
   val vl = UInt((1+log2Ceil(maxVLMax)).W)
   val tail = Bool()
 }
 
-class SpecialMicroOpWithData(implicit p: Parameters) extends SpecialMicroOp {
-  val rvs2_data = UInt(dLen.W)
-}
-
 class PipeHazard(pipe_depth: Int)(implicit p: Parameters) extends CoreBundle()(p) with HasVectorParams {
+  val latency = UInt(log2Ceil(pipe_depth).W)  
   val eg = UInt(log2Ceil(egsTotal).W)
-  val vat = UInt(vParams.vatSz.W)
   def eg_oh = UIntToOH(eg)
 }
 
