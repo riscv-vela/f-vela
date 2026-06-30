@@ -208,6 +208,25 @@ All of these can be built via `./build.sh` and then used as workloads in simulat
 
 This section describes how to build and simulate the software for the RISC-V VPU(Saturn).
 
+> ## ⚠️ REQUIRED BEFORE RUNNING vfpid — DO NOT SKIP
+>
+> The vfpid workload is built and validated **only** for the following Saturn vector
+> configuration. You **must** use a config with these exact parameters in **both**
+> Verilator simulation and FireSim, otherwise vfpid will produce wrong results or fail
+> to elaborate:
+>
+> | Parameter            | Required Value |
+> |----------------------|----------------|
+> | **VLEN** (`vLen`)    | **512 bits**   |
+> | **DLEN** (`dLen`)    | **256 bits**   |
+>
+> - **Verilator**: use the `REFV512D256RocketConfig` config (`V512` = VLEN 512, `D256` = DLEN 256).
+> - **FireSim**: use a target config whose Saturn `VectorParams` set `vLen = 512` and `dLen = 256`
+>   (i.e. the FireSim equivalent of `REFV512D256RocketConfig`). See
+>   [3. FireSim (Alveo U280) Settings for vfpid](#3-firesim-alveo-u280-settings-for-vfpid) below.
+>
+> If you change VLEN/DLEN, you must rebuild the vfpid binary and regenerate the design.
+
 ### 1. Configure CMakeLists.txt
 
 Before building, you need to register the source files and enable the Vector extension in `CMakeLists.txt`.
@@ -235,12 +254,15 @@ cmake --build ./build/ --target all
 ### 3. Run Verilator Simulation
 You can run the generated binary on the Chipyard Verilator simulator using specific Rocket Chip configurations.
 
+> **Required config:** vfpid must run on `REFV512D256RocketConfig` (**VLEN = 512 bit, DLEN = 256 bit**).
+> Any other VLEN/DLEN combination is unsupported for vfpid.
+
 Navigate to the simulator directory:
 ```bash
 cd chipyard/sims/verilator
 ```
 
-run with ex-512bit vlen, 256bit dlen config
+Run with the ex-512bit VLEN / 256bit DLEN config (note the mandatory `CONFIG=REFV512D256RocketConfig`):
 ```bash
 make run-binary-debug CONFIG=REFV512D256RocketConfig VERILATOR_THREADS=8 -j$(nproc) BINARY=../../tests/build/vfpid_4d.riscv
 ```
@@ -250,6 +272,42 @@ After the simulation completes, you can inspect the waveform to verify the PID o
 ```bash
 /sims/verilator/output/chipyard.TestHarness.<CONFIG>/PID.vcd
 ```
+
+### 5. FireSim (Alveo U280) Settings for vfpid
+
+When running vfpid under FireSim, the **VLEN = 512 / DLEN = 256** requirement still applies — the
+FPGA design must be built from a target config with these exact Saturn vector parameters.
+
+1. **Select / define a FireSim target config with VLEN=512, DLEN=256.**
+   In your FireSim target project (Chipyard `firesim` area), make sure the `DESIGN`/`TARGET_CONFIG`
+   you build uses the Saturn `VectorParams` equivalent of `REFV512D256RocketConfig`:
+
+   ```scala
+   // VectorParams (Saturn) must set:
+   //   vLen = 512   // VLEN = 512 bit
+   //   dLen = 256   // DLEN = 256 bit
+   ```
+
+   Set this as the FireSim `TARGET_CONFIG` (e.g. in `config_build_recipes.yaml` /
+   `config_runtime.yaml`) before building the bitstream.
+
+2. **Build the FireSim bitstream / AFI** from that VLEN=512/DLEN=256 target config:
+
+   ```bash
+   firesim buildbitstream
+   ```
+
+3. **Register the vfpid binary as the workload.**
+   Use the same `vfpid_4d.riscv` produced in step 2 (Build the PID Binary) as the FireSim workload,
+   then deploy and run:
+
+   ```bash
+   firesim infrasetup
+   firesim runworkload
+   ```
+
+> ⚠️ If the FireSim bitstream was built with a different VLEN/DLEN, you must rebuild it with
+> VLEN=512 / DLEN=256 before running vfpid — switching the workload alone is not enough.
 
 
 ---
