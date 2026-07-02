@@ -321,7 +321,7 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   io.counter.connectEventSignal(CounterEvent.STORE_SCRATCHPAD_WAIT_CYCLE, io.dma.req.valid && !io.dma.req.ready)
 
   ProfileEventIO.init(io.profile)
-  io.profile.connectEventSignal(ProfileEvent.ST_CTRL_EXECUTE, cmd.fire, cmd.bits.rob_id.bits)
+  io.profile.connectEventSignal(ProfileEvent.ST_CTRL_EXECUTE, cmd_tracker.io.alloc.fire(), cmd.bits.rob_id.bits)
 
 
   if (use_firesim_simulation_counters) {

@@ -188,7 +188,7 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   }
 
   ProfileEventIO.init(io.profile)
-  io.profile.connectEventSignal(ProfileEvent.LD_CTRL_EXECUTE, cmd.fire, cmd.bits.rob_id.bits)
+  io.profile.connectEventSignal(ProfileEvent.LD_CTRL_EXECUTE, cmd_tracker.io.alloc.fire(), cmd.bits.rob_id.bits)
 
   // Assertions
   assert(!(cmd_tracker.io.alloc.fire() && cmd_tracker.io.alloc.bits.bytes_to_read === 0.U), "A single mvin instruction must load more than 0 bytes")
