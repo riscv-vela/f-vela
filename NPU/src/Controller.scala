@@ -237,6 +237,7 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   profiler.module.io.profile_io.event_io.collect(load_controller.io.profile)
   profiler.module.io.profile_io.event_io.collect(ex_controller.io.profile)
   profiler.module.io.profile_io.event_io.collect(store_controller.io.profile)
+  profiler.module.io.profile_io.event_io.collect(spad.module.io.profile)
 
   /*
   tiler.io.issue.load.ready := false.B

@@ -199,6 +199,7 @@ class PStreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes:
     tlb_q.io.enq <> tlb_arb.io.out
 
     io.tlb.req.valid := tlb_q.io.deq.fire
+    io.tlb.req.bits := DontCare
     io.tlb.req.bits.tlb_req.vaddr := tlb_q.io.deq.bits.vaddr
     io.tlb.req.bits.tlb_req.passthrough := false.B
     io.tlb.req.bits.tlb_req.size := 0.U
@@ -298,7 +299,7 @@ object ProfileEvent{
     val ENTER_DMA_READ  = 12 // controller에서 주석처리 - 구현 X
     val ENTER_DMA_WRITE = 13 // controller에서 주석처리 - 구현 X
     val LEAVE_DMA_READ  = 14 // controller에서 주석처리 - 구현 X
-    val LEAVE_DMA_WRITE = 15 // controller에서 주석처리 - 구현 X
+    val LEAVE_DMA_WRITE = 15 // write DMA TileLink D 응답
 
     val ENTER_SPAD_READ = 16 // 구현 X
     val ENTER_SPAD_WRITE= 17 // 구현 X
@@ -316,11 +317,14 @@ object ProfileEvent{
     val ST_CTRL_EXECUTE = 26 // store controller
     
     val n = 27
+
+    val STORE_PROFILE_TOKEN_WIDTH = 16
+    def storeProfileIdWidth(robIdWidth: Int): Int = STORE_PROFILE_TOKEN_WIDTH + robIdWidth
 }
 
-class ProfileEventIO(ROB_ID_WIDTH : Int) extends Bundle{
+class ProfileEventIO(EVENT_ID_WIDTH : Int) extends Bundle{
     val event_signal = Output(Vec(ProfileEvent.n, Bool()))
-    val event_id     = Output(Vec(ProfileEvent.n, UInt(ROB_ID_WIDTH.W)))
+    val event_id     = Output(Vec(ProfileEvent.n, UInt(EVENT_ID_WIDTH.W)))
 
     private var connected = Array.fill(ProfileEvent.n)(false)
 
@@ -352,9 +356,9 @@ object ProfileEventIO {
     }
 }
 
-class ProfileIO [T <: Data](cmd_t: T, ROB_ID_WIDTH: Int) extends Bundle{
+class ProfileIO [T <: Data](cmd_t: T, ROB_ID_WIDTH: Int, EVENT_ID_WIDTH: Int = ROB_ID_WIDTH) extends Bundle{
     val issue_cmd = new ReservationStationIssue(cmd_t, ROB_ID_WIDTH)
-    val event_io = new ProfileEventIO(ROB_ID_WIDTH)
+    val event_io = new ProfileEventIO(EVENT_ID_WIDTH)
 }
 
 class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArrayConfig[T, U, V], cmd_t: GemminiCmd)
@@ -371,6 +375,7 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
     val xbar_node = TLXbar()
 
     val writer = LazyModule(new PStreamWriter(max_in_flight_mem_reqs, dataBits, maxBytes, data_w, aligned_to))
+    val profile_event_id_width = ProfileEvent.storeProfileIdWidth(ROB_ID_WIDTH)
 
     xbar_node := TLBuffer() := writer.node
     id_node := TLWidthWidget(dma_buswidth/8) := TLBuffer() := xbar_node
@@ -378,7 +383,7 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
     lazy val module = new Impl
     class Impl extends LazyModuleImp(this) with HasCoreParameters {
       val io = IO(new Bundle {
-          val profile_io = Flipped(new ProfileIO(cmd_t, ROB_ID_WIDTH))
+          val profile_io = Flipped(new ProfileIO(cmd_t, ROB_ID_WIDTH, profile_event_id_width))
           val profiler_vaddr_valid = Input(Bool())
           val profiler_vaddr = Input(UInt(coreMaxAddrBits.W))
           val profiler_status = Input(new MStatus)
@@ -397,6 +402,14 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
       class ProfileDataWCMD extends Bundle {
           val tag = UInt(30.W)
           val start_time = UInt(31.W) // ROB_ALLOC ~ ROB_COMPLETE
+          val cmd = cmd_t.cloneType
+      }
+
+      class PendingStoreProfile extends Bundle {
+          val valid = Bool()
+          val profile_id = UInt(profile_event_id_width.W)
+          val tag = UInt(30.W)
+          val start_time = UInt(31.W)
           val cmd = cmd_t.cloneType
       }
 
@@ -435,6 +448,16 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
       val entries_st = Reg(Vec(reservation_station_entries_st, new ProfileDataWCMD))
       val entries = entries_ld ++ entries_ex ++ entries_st
 
+      // Store profiles stay live until the final write DMA TL-D response, which can lag the ROB completion.
+      val scratchpad_write_pipeline_entries =
+        2 + (spad_read_delay + 2) + (spad_read_delay + 2) + (spad_read_delay + 1) + 1
+      val completed_store_write_window_entries = scratchpad_write_pipeline_entries + max_in_flight_mem_reqs
+      val pending_store_entries = reservation_station_entries_st + completed_store_write_window_entries
+      val pending_stores = RegInit(VecInit(Seq.fill(pending_store_entries)(0.U.asTypeOf(new PendingStoreProfile))))
+      val pending_store_free_vec = VecInit(pending_stores.map(p => !p.valid))
+      val pending_store_free = pending_store_free_vec.asUInt.orR
+      val pending_store_free_idx = OHToUInt(PriorityEncoderOH(pending_store_free_vec))
+
       io.profile_io.issue_cmd.ready := true.B
       
       val signal = io.profile_io.event_io.event_signal
@@ -442,7 +465,7 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
       
       val new_entry = Wire(new ProfileDataWCMD)
       new_entry.tag := tag
-      new_entry.start_time := DontCare
+      new_entry.start_time := 0.U
       new_entry.cmd := io.profile_io.issue_cmd.cmd
 
       val mvNcomList = Seq(1.U, 2.U, 3.U, 4.U, 5.U, 14.U)
@@ -472,8 +495,9 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
       for(i <- 2 until ProfileEvent.n){
           when(signal(i)){
               val type_width = log2Up(res_max_per_type)
-              val queue_type = id(i)(type_width + 1, type_width)
-              val issue_id = id(i)(type_width - 1, 0)
+              val event_rob_id = id(i)(ROB_ID_WIDTH - 1, 0)
+              val queue_type = event_rob_id(type_width + 1, type_width)
+              val issue_id = event_rob_id(type_width - 1, 0)
               Seq((ldq, entries_ld, reservation_station_entries_ld),
               (exq, entries_ex, reservation_station_entries_ex),
               (stq, entries_st, reservation_station_entries_st))
@@ -481,19 +505,65 @@ class Profiler [T <: Data : Arithmetic, U <: Data, V <: Data](config: GemminiArr
                   when(queue_type===q){
                       val entry = entries_type(issue_id)
                       val cmd = entry.cmd.cmd
+                      val is_profiled_cmd = mvNcomList.map(_ === cmd.inst.funct).reduce((a: Bool, b: Bool) => a || b)
+                      val is_store_entry = q === stq
+                      val has_start_time = entry.start_time =/= 0.U
 
-                      printf("0x%x/%d-%d/%d-%d-%d\n", 
-                              entry.tag, i.U, clk_cnt, cmd.inst.asUInt, cmd.rs1, cmd.rs2)
+                      when(i.U =/= ProfileEvent.LEAVE_DMA_WRITE.U) {
+                        printf("0x%x/%d-%d/%d-%d-%d\n",
+                                entry.tag, i.U, clk_cnt, cmd.inst.asUInt, cmd.rs1, cmd.rs2)
+                      }
 
-                      when(i.U === ProfileEvent.LD_CTRL_EXECUTE.U || i.U === ProfileEvent.EX_CTRL_EXECUTE.U || i.U === ProfileEvent.ST_CTRL_EXECUTE.U){
+                      when(i.U === ProfileEvent.LD_CTRL_EXECUTE.U || i.U === ProfileEvent.EX_CTRL_EXECUTE.U){
                         entry.start_time := clk_cnt
                       }
+                      .elsewhen(i.U === ProfileEvent.ST_CTRL_EXECUTE.U){
+                          entry.start_time := clk_cnt
+                          when (is_profiled_cmd && is_store_entry) {
+                            assert(pending_store_free, "Profiler pending store table overflow")
+                            pending_stores(pending_store_free_idx).valid := true.B
+                            pending_stores(pending_store_free_idx).profile_id := id(i)
+                            pending_stores(pending_store_free_idx).tag := entry.tag
+                            pending_stores(pending_store_free_idx).start_time := clk_cnt
+                            pending_stores(pending_store_free_idx).cmd := entry.cmd
+                          }
+                      }
                       .elsewhen(i.U === ProfileEvent.ROB_COMPLETE.U){
-                          when (mvNcomList.map(_ === cmd.inst.funct).reduce((a: Bool, b: Bool) => a || b)) {
+                          when (is_profiled_cmd && !is_store_entry && has_start_time) {
                             printf("%d, %d, %d\n", q, entry.start_time, clk_cnt)
                             when (profiler_vaddr_valid) {
                               write_q.io.enq.valid := true.B
                               write_q.io.enq.bits := Cat(q, entry.start_time, clk_cnt)
+                              when (write_q.io.enq.fire) {
+                                entry.start_time := 0.U
+                              }
+                            }
+                          }
+                      }
+                      .elsewhen(i.U === ProfileEvent.LEAVE_DMA_WRITE.U){
+                          val pending_store_match_vec = VecInit(pending_stores.map(p => p.valid && p.profile_id === id(i)))
+                          val pending_store_match = pending_store_match_vec.asUInt.orR
+                          val pending_store_match_idx = PriorityEncoder(pending_store_match_vec)
+                          val pending_store = pending_stores(pending_store_match_idx)
+                          val pending_cmd = pending_store.cmd.cmd
+                          val is_profiled_store_cmd = mvNcomList.map(_ === pending_cmd.inst.funct).reduce((a: Bool, b: Bool) => a || b)
+                          val pending_store_has_start_time = pending_store.start_time =/= 0.U
+
+                          when (pending_store_match) {
+                            printf("0x%x/%d-%d/%d-%d-%d\n",
+                                    pending_store.tag, i.U, clk_cnt, pending_cmd.inst.asUInt, pending_cmd.rs1, pending_cmd.rs2)
+
+                            when (is_profiled_store_cmd && pending_store_has_start_time) {
+                              printf("%d, %d, %d\n", stq, pending_store.start_time, clk_cnt)
+                              when (profiler_vaddr_valid) {
+                                assert(write_q.io.enq.ready, "Profiler write queue is full on store DMA completion")
+                                write_q.io.enq.valid := true.B
+                                write_q.io.enq.bits := Cat(stq, pending_store.start_time, clk_cnt)
+                              }
+                            }
+
+                            when (!profiler_vaddr_valid || !is_profiled_store_cmd || !pending_store_has_start_time || write_q.io.enq.ready) {
+                              pending_store.valid := false.B
                             }
                           }
                       }
