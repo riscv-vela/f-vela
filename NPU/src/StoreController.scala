@@ -15,16 +15,20 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
                                                                     coreMaxAddrBits: Int, local_addr_t: LocalAddr)(implicit p: Parameters) extends Module {
   import config._
 
+  val profile_event_id_width = ProfileEvent.storeProfileIdWidth(ROB_ID_WIDTH)
+
   val io = IO(new Bundle {
     val cmd = Flipped(Decoupled(new GemminiCmd(reservation_station_entries)))
 
-    val dma = new ScratchpadWriteMemIO(local_addr_t, accType.getWidth, acc_scale_t_bits)
+    val dma = new ScratchpadWriteMemIO(local_addr_t, accType.getWidth, acc_scale_t_bits, ROB_ID_WIDTH, profile_event_id_width)
 
     val completed = Decoupled(UInt(log2Up(reservation_station_entries).W))
 
     val busy = Output(Bool())
 
     val counter = new CounterEventIO()
+
+    val profile = new ProfileEventIO(profile_event_id_width)
   })
 
   // val waiting_for_command :: waiting_for_dma_req_ready :: sending_rows :: Nil = Enum(3)
@@ -134,6 +138,10 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   val DoConfigNorm = config.has_normalizations.B && cmd.bits.cmd.inst.funct === CONFIG_CMD && config_cmd_type === CONFIG_NORM
   val DoStore = !DoConfig && !DoConfigNorm
 
+  val store_profile_token = RegInit(0.U(ProfileEvent.STORE_PROFILE_TOKEN_WIDTH.W))
+  val next_store_profile_id = Cat(store_profile_token, cmd.bits.rob_id.bits)
+  val active_store_profile_id = Reg(UInt(profile_event_id_width.W))
+
   cmd.ready := false.B
 
   val mvout_1d_rows = pool_orows * pool_ocols //for 1D mvout
@@ -172,10 +180,17 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
 
   io.dma.req.bits.len := Mux(block_counter === blocks - 1.U, ((cols - 1.U) % block_cols.U) + 1.U, block_cols.U)
   io.dma.req.bits.block := block_counter
+  io.dma.req.bits.rob_id := cmd.bits.rob_id.bits
+  io.dma.req.bits.profile_id := Mux(control_state === waiting_for_command, next_store_profile_id, active_store_profile_id)
   io.dma.req.bits.status := mstatus
   io.dma.req.bits.pool_en := pooling_is_enabled && (wrow_counter =/= 0.U || wcol_counter =/= 0.U)
   io.dma.req.bits.store_en := Mux(pooling_is_enabled, wrow_counter === pool_size - 1.U && wcol_counter === pool_size - 1.U,
     block_counter === blocks - 1.U)
+  io.dma.req.bits.last := Mux(pooling_is_enabled,
+    porow_counter === pool_porows - 1.U && pocol_counter === pool_pocols - 1.U &&
+      wrow_counter === pool_size - 1.U && wcol_counter === pool_size - 1.U,
+    block_counter === blocks - 1.U &&
+      Mux(mvout_1d_enabled, row_counter === mvout_1d_rows - 1.U, row_counter === rows - 1.U))
 
   // Command tracker IO
   cmd_tracker.io.alloc.valid := control_state === waiting_for_command && cmd.valid && DoStore
@@ -189,6 +204,11 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
 
   val cmd_id = RegEnableThru(cmd_tracker.io.alloc.bits.cmd_id, cmd_tracker.io.alloc.fire()) // TODO is this really better than a simple RegEnable?
   io.dma.req.bits.cmd_id := cmd_id
+
+  when (cmd_tracker.io.alloc.fire) {
+    active_store_profile_id := next_store_profile_id
+    store_profile_token := store_profile_token + 1.U
+  }
 
   io.completed.valid := cmd_tracker.io.cmd_completed.valid
   io.completed.bits := cmd_tracker.io.cmd_completed.bits.tag.rob_id
@@ -317,6 +337,10 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   io.counter.connectEventSignal(CounterEvent.STORE_POOLING_CYCLE, pooling_is_enabled)
   io.counter.connectEventSignal(CounterEvent.STORE_DMA_WAIT_CYCLE, control_state === waiting_for_dma_req_ready)
   io.counter.connectEventSignal(CounterEvent.STORE_SCRATCHPAD_WAIT_CYCLE, io.dma.req.valid && !io.dma.req.ready)
+
+  ProfileEventIO.init(io.profile)
+  io.profile.connectEventSignal(ProfileEvent.ST_CTRL_EXECUTE, cmd_tracker.io.alloc.fire(), next_store_profile_id)
+
 
   if (use_firesim_simulation_counters) {
     PerfCounter(pooling_is_enabled, "pooling_cycles", "cycles during which store controller is max-pooling")

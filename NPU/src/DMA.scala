@@ -335,11 +335,14 @@ class StreamReaderCore[T <: Data, U <: Data, V <: Data](config: GemminiArrayConf
   }
 }
 
-class StreamWriteRequest(val dataWidth: Int, val maxBytes: Int)(implicit p: Parameters) extends CoreBundle {
+class StreamWriteRequest(val dataWidth: Int, val maxBytes: Int, val robIdWidth: Int, val profileIdWidth: Int)(implicit p: Parameters) extends CoreBundle {
   val vaddr = UInt(coreMaxAddrBits.W)
   val data = UInt(dataWidth.W)
   val len = UInt(log2Up((dataWidth/8 max maxBytes)+1).W) // The number of bytes to write
   val block = UInt(8.W) // TODO magic number
+  val rob_id = UInt(robIdWidth.W)
+  val profile_id = UInt(profileIdWidth.W)
+  val last = Bool()
   val status = new MStatus
 
   // Pooling variables
@@ -349,7 +352,7 @@ class StreamWriteRequest(val dataWidth: Int, val maxBytes: Int)(implicit p: Para
 
 class StreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes: Int, dataWidth: Int, aligned_to: Int,
                                           inputType: T, block_cols: Int, use_tlb_register_filter: Boolean,
-                                          use_firesim_simulation_counters: Boolean)
+                                          use_firesim_simulation_counters: Boolean, robIdWidth: Int, profileIdWidth: Int)
                   (implicit p: Parameters) extends LazyModule {
   val node = TLClientNode(Seq(TLMasterPortParameters.v1(Seq(TLClientParameters(
     name = "stream-writer", sourceId = IdRange(0, nXacts))))))
@@ -369,17 +372,18 @@ class StreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes: 
     require(beatBytes > 0)
 
     val io = IO(new Bundle {
-      val req = Flipped(Decoupled(new StreamWriteRequest(dataWidth, maxBytes)))
+      val req = Flipped(Decoupled(new StreamWriteRequest(dataWidth, maxBytes, robIdWidth, profileIdWidth)))
       val tlb = new FrontendTLBIO
       val busy = Output(Bool())
       val flush = Input(Bool())
       val counter = new CounterEventIO()
+      val profile = new ProfileEventIO(profileIdWidth)
     })
 
     val (s_idle :: s_writing_new_block :: s_writing_beats :: Nil) = Enum(3)
     val state = RegInit(s_idle)
 
-    val req = Reg(new StreamWriteRequest(dataWidth, maxBytes))
+    val req = Reg(new StreamWriteRequest(dataWidth, maxBytes, robIdWidth, profileIdWidth))
 
     // TODO use the same register to hold data_blocks and data_single_block, so that this Mux here is not necessary
     val data_blocks = Reg(Vec(maxBlocks, UInt((inputTypeRowBytes * 8).W)))
@@ -392,6 +396,8 @@ class StreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes: 
     val xactBusy = RegInit(0.U(nXacts.W))
     val xactOnehot = PriorityEncoderOH(~xactBusy)
     val xactId = OHToUInt(xactOnehot)
+    val xactProfileIds = RegInit(VecInit(Seq.fill(nXacts)(0.U(profileIdWidth.W))))
+    val xactIsLastStoreWrite = RegInit(VecInit(Seq.fill(nXacts)(false.B)))
 
     val xactBusy_fire = WireInit(false.B)
     val xactBusy_add = Mux(xactBusy_fire, (1.U << xactId).asUInt, 0.U)
@@ -480,6 +486,7 @@ class StreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes: 
     val write_shift = PriorityEncoder(write_mask)
 
     val bytes_written_this_beat = write_packet.bytes_written_per_beat(beatsSent)
+    val write_packet_completes_req = write_packet.bytes_written >= bytesLeft
 
     // Firing off TileLink write requests
     val putFull = edge.Put(
@@ -549,6 +556,20 @@ class StreamWriter[T <: Data: Arithmetic](nXacts: Int, beatBits: Int, maxBytes: 
     tl.a.bits.address := RegEnableThru(io.tlb.resp.paddr, RegNext(io.tlb.req.fire))
 
     tl.d.ready := xactBusy.orR
+
+    when (tl.d.fire) {
+      xactIsLastStoreWrite(tl.d.bits.source) := false.B
+    }
+
+    when (xactBusy_fire) {
+      xactProfileIds(xactId) := req.profile_id
+      xactIsLastStoreWrite(xactId) := req.store_en && req.last && write_packet_completes_req
+    }
+
+    ProfileEventIO.init(io.profile)
+    io.profile.connectEventSignal(ProfileEvent.LEAVE_DMA_WRITE,
+      tl.d.fire && xactIsLastStoreWrite(tl.d.bits.source),
+      xactProfileIds(tl.d.bits.source))
 
     when (untranslated_a.fire) {
       when (state === s_writing_new_block) {
