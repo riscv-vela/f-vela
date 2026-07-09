@@ -205,7 +205,7 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   val cmd_id = RegEnableThru(cmd_tracker.io.alloc.bits.cmd_id, cmd_tracker.io.alloc.fire()) // TODO is this really better than a simple RegEnable?
   io.dma.req.bits.cmd_id := cmd_id
 
-  when (cmd_tracker.io.alloc.fire) {
+  when (cmd_tracker.io.alloc.fire()) { // fixed by woojin 
     active_store_profile_id := next_store_profile_id
     store_profile_token := store_profile_token + 1.U
   }
