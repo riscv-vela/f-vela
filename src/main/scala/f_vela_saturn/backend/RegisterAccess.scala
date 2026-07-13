@@ -28,6 +28,12 @@ class RegisterAccess(exSeqs: Int, maxExuDepth: Int)(implicit p: Parameters) exte
       val rvm = Flipped(new VectorReadIO)
     }
 
+    // @@@@ Custom (PID): one extra vs2 read port + one extra long-latency write port
+    val custom = new Bundle {
+      val rvs2 = Flipped(new VectorReadIO)
+      val write = Flipped(Decoupled(new VectorWrite(dLen)))
+    }
+
     val frontend = new Bundle {
       val rindex = Flipped(new VectorReadIO)
       val rmask = Flipped(new VectorReadIO)
@@ -46,10 +52,10 @@ class RegisterAccess(exSeqs: Int, maxExuDepth: Int)(implicit p: Parameters) exte
   // Mask read arbitrates between <- [vxs], vls, vss, vps, frontend-mask
 
   val vrf = Module(new RegisterFile(
-    reads = Seq(1 + exSeqs, 1 + exSeqs, 1 + exSeqs),
+    reads = Seq(1 + exSeqs, 2 + exSeqs, 1 + exSeqs), // @@@@ read group 1 (+vs2): +1 for custom
     maskReads = Seq(4 + exSeqs),
     pipeWrites = exSeqs,
-    llWrites = exSeqs + 2, // load + reset
+    llWrites = exSeqs + 3, // load + reset + iter_writes + custom
     maxExuDepth
   ))
 
@@ -65,6 +71,7 @@ class RegisterAccess(exSeqs: Int, maxExuDepth: Int)(implicit p: Parameters) exte
   for (i <- 0 until exSeqs) {
     vrf.io.ll_writes(2+i) <> io.iter_writes(i)
   }
+  vrf.io.ll_writes(exSeqs+2) <> io.custom.write // @@@@ custom (PID) write
 
   // Pipe writes
   for (i <- 0 until exSeqs) {
@@ -82,6 +89,7 @@ class RegisterAccess(exSeqs: Int, maxExuDepth: Int)(implicit p: Parameters) exte
 
   vrf.io.read(0)(exSeqs) <> io.vps.rvs2
   vrf.io.read(1)(exSeqs) <> io.frontend.rindex
+  vrf.io.read(1)(exSeqs+1) <> io.custom.rvs2 // @@@@ custom (PID) vs2 read
   vrf.io.read(2)(exSeqs) <> io.vss.rvd
 
   vrf.io.mask_read(0)(exSeqs)   <> io.vls.rvm
@@ -99,6 +107,7 @@ class RegisterAccess(exSeqs: Int, maxExuDepth: Int)(implicit p: Parameters) exte
     io.vxs.foreach(_.rvm.req.ready := false.B)
     io.vps.rvs2.req.ready := false.B
     io.vps.rvm.req.ready := false.B
+    io.custom.rvs2.req.ready := false.B
     reset_ctr := reset_ctr + 1.U
     when (~reset_ctr === 0.U) { resetting := false.B }
   }

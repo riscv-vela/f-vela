@@ -48,6 +48,10 @@ trait OPFInstruction extends VectorInstruction {
   def VF = new OPFVFInstruction(this)
 }
 
+/* yookyung_generate@@@@Custom */
+object VROPE     extends OPIInstruction    { val props = Seq(F6(OPIFunct6.vfrope)  , ReadsVS1.N, ReadsVS2.Y, ReadsScalar1.Y, WritesVD.Y, IsVRoPE.Y) }
+/* Custom */
+
 object ADD       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.add)     , DoSub.N, Averaging.N, CarryIn.N) }
 object SUB       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.sub)     , DoSub.Y, Averaging.N, CarryIn.N) }
 object RSUB      extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rsub)    , DoSub.Y, Averaging.N, CarryIn.N, Swap12.Y) }
@@ -179,6 +183,14 @@ object FREDUSUM  extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fredus
 object FWREDOSUM extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fwredosum), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W)), Wide2VD.Y, Reduction.Y, AccInitZeros.Y, Elementwise.Y) }
 object FWREDUSUM extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fwredusum), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W)), Wide2VD.Y, Reduction.Y, AccInitZeros.Y) }
 
+/* junseok_generate @@ Custom: PID custom instructions (ported from older Saturn).
+ *   Reuse the OPFVF fredosum/fredusum encodings (real vfred* are OPFVV .vs form).
+ *   Distinguished from the FP reductions by funct3 (OPFVF) + restrictSEW at dispatch,
+ *   and routed exclusively to the CustomSequencer/CustomExecutionUnit in the Backend. */
+object VFPID64B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredosum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
+object VFPID32B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredusum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
+/* Custom */
+
 object FDIV      extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fdiv)     , FPSwapVdV2.N, FPAdd.N, FPMul.N) }
 object FRDIV     extends OPFInstruction    { val props = Seq(F6(OPFFunct6.frdiv)    , FPSwapVdV2.Y, FPAdd.N, FPMul.N) }
 object FSQRT_V   extends VectorInstruction { val props = Seq(F6(OPFFunct6.funary1)  , F3(VectorConsts.OPFVV), RS1( 0.U(5.W)), FPSwapVdV2.N, FPAdd.N, FPMul.N) }
@@ -231,12 +243,4 @@ object ROL        extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rol) 
 object RORI       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.rol)      , UsesShift.Y, ShiftsLeft.Y, ScalingShift.N) }
 object ROR        extends OPIInstruction    { val props = Seq(F6(OPIFunct6.ror)      , UsesShift.Y, ShiftsLeft.N, ScalingShift.N) }
 object WSLL       extends OPIInstruction    { val props = Seq(F6(OPIFunct6.wsll)     , UsesShift.Y, ShiftsLeft.Y, ScalingShift.N, Wide2VD.Y, ZextImm5.Y) }
-
-/* Custom */
-/* yookyung_generate@@@@Custom */
-object VROPE     extends OPIInstruction    { val props = Seq(F6(OPIFunct6.vfrope)  , ReadsVS1.N, ReadsVS2.Y, ReadsScalar1.Y, WritesVD.Y, IsVRoPE.Y) }
-/* junseok_generate @@ Custom */
-object VFPID64B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredosum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
-object VFPID32B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredusum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
-
 

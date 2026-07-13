@@ -27,7 +27,7 @@ class ScratchpadMemReadRequest[U <: Data](local_addr_t: LocalAddr, scale_t_bits:
 
 }
 
-class ScratchpadMemWriteRequest(local_addr_t: LocalAddr, acc_t_bits: Int, scale_t_bits: Int)
+class ScratchpadMemWriteRequest(local_addr_t: LocalAddr, acc_t_bits: Int, scale_t_bits: Int, rob_id_bits: Int, profile_id_bits: Int)
                               (implicit p: Parameters) extends CoreBundle {
   val vaddr = UInt(coreMaxAddrBits.W)
   val laddr = local_addr_t.cloneType
@@ -44,6 +44,9 @@ class ScratchpadMemWriteRequest(local_addr_t: LocalAddr, acc_t_bits: Int, scale_
   val block = UInt(8.W) // TODO don't use a magic number for the width here
 
   val cmd_id = UInt(8.W) // TODO don't use a magic number here
+  val rob_id = UInt(rob_id_bits.W)
+  val profile_id = UInt(profile_id_bits.W)
+  val last = Bool()
   val status = new MStatus
 
   // Pooling variables
@@ -66,9 +69,9 @@ class ScratchpadReadMemIO[U <: Data](local_addr_t: LocalAddr, scale_t_bits: Int)
   val resp = Flipped(Valid(new ScratchpadMemReadResponse))
 }
 
-class ScratchpadWriteMemIO(local_addr_t: LocalAddr, acc_t_bits: Int, scale_t_bits: Int)
+class ScratchpadWriteMemIO(local_addr_t: LocalAddr, acc_t_bits: Int, scale_t_bits: Int, rob_id_bits: Int, profile_id_bits: Int)
                          (implicit p: Parameters) extends CoreBundle {
-  val req = Decoupled(new ScratchpadMemWriteRequest(local_addr_t, acc_t_bits, scale_t_bits))
+  val req = Decoupled(new ScratchpadMemWriteRequest(local_addr_t, acc_t_bits, scale_t_bits, rob_id_bits, profile_id_bits))
   val resp = Flipped(Valid(new ScratchpadMemWriteResponse))
 }
 
@@ -177,6 +180,7 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
 
   val maxBytes = dma_maxbytes
   val dataBits = dma_buswidth
+  val profile_event_id_width = ProfileEvent.storeProfileIdWidth(ROB_ID_WIDTH)
 
   val block_rows = meshRows * tileRows
   val block_cols = meshColumns * tileColumns
@@ -191,7 +195,7 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
     use_firesim_simulation_counters))
   val writer = LazyModule(new StreamWriter(max_in_flight_mem_reqs, dataBits, maxBytes,
     if (acc_read_full_width) acc_w else spad_w, aligned_to, inputType, block_cols, use_tlb_register_filter,
-    use_firesim_simulation_counters))
+    use_firesim_simulation_counters, ROB_ID_WIDTH, profile_event_id_width))
 
   // TODO make a cross-bar vs two separate ports a config option
   // id_node :=* reader.node
@@ -207,7 +211,7 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
       // DMA ports
       val dma = new Bundle {
         val read = Flipped(new ScratchpadReadMemIO(local_addr_t, mvin_scale_t_bits))
-        val write = Flipped(new ScratchpadWriteMemIO(local_addr_t, accType.getWidth, acc_scale_t_bits))
+        val write = Flipped(new ScratchpadWriteMemIO(local_addr_t, accType.getWidth, acc_scale_t_bits, ROB_ID_WIDTH, profile_event_id_width))
       }
 
       // SRAM ports
@@ -243,15 +247,16 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
       val busy = Output(Bool())
       val flush = Input(Bool())
       val counter = new CounterEventIO()
+      val profile = new ProfileEventIO(profile_event_id_width)
     })
 
     val write_dispatch_q = Queue(io.dma.write.req)
     // Write norm/scale queues are necessary to maintain in-order requests to accumulator norm/scale units
     // Writes from main SPAD just flow directly between scale_q and issue_q, while writes
     // From acc are ordered
-    val write_norm_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits), spad_read_delay+2))
-    val write_scale_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits), spad_read_delay+2))
-    val write_issue_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits), spad_read_delay+1, pipe=true))
+    val write_norm_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits, ROB_ID_WIDTH, profile_event_id_width), spad_read_delay+2))
+    val write_scale_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits, ROB_ID_WIDTH, profile_event_id_width), spad_read_delay+2))
+    val write_issue_q = Module(new Queue(new ScratchpadMemWriteRequest(local_addr_t, accType.getWidth, acc_scale_t_bits, ROB_ID_WIDTH, profile_event_id_width), spad_read_delay+1, pipe=true))
     val read_issue_q = Module(new Queue(new ScratchpadMemReadRequest(local_addr_t, mvin_scale_t_bits), spad_read_delay+1, pipe=true)) // TODO can't this just be a normal queue?
 
     write_dispatch_q.ready := false.B
@@ -302,6 +307,9 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
        writeData_is_full_width -> fullAccWriteData
     ))
     writer.module.io.req.bits.block := write_issue_q.io.deq.bits.block
+    writer.module.io.req.bits.rob_id := write_issue_q.io.deq.bits.rob_id
+    writer.module.io.req.bits.profile_id := write_issue_q.io.deq.bits.profile_id
+    writer.module.io.req.bits.last := write_issue_q.io.deq.bits.last
     writer.module.io.req.bits.status := write_issue_q.io.deq.bits.status
     writer.module.io.req.bits.pool_en := write_issue_q.io.deq.bits.pool_en
     writer.module.io.req.bits.store_en := write_issue_q.io.deq.bits.store_en
@@ -835,5 +843,8 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
     io.counter := DontCare
     io.counter.collect(reader.module.io.counter)
     io.counter.collect(writer.module.io.counter)
+
+    ProfileEventIO.init(io.profile)
+    io.profile.collect(writer.module.io.profile)
   }
 }

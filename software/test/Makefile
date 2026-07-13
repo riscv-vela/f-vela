@@ -1,0 +1,35 @@
+########################################################################################################################
+# software/test / Makefile  (top-level dispatcher)
+#
+#   Builds the gemmini, pid, rope and profiler test folders by delegating to each folder's own Makefile.
+#
+#   usage:
+#     make            # build all (gemmini + pid + rope + profiler)
+#     make gemmini    # build only rv_gemmini_test
+#     make pid        # build only rv_pid_test
+#     make rope       # build only rv_rope_test
+#     make profiler   # build only profiler_test
+#     make clean      # clean all
+########################################################################################################################
+
+.PHONY: all gemmini pid rope profiler clean
+
+all: gemmini pid rope profiler
+
+gemmini:
+	$(MAKE) -C rv_gemmini_test
+
+pid:
+	$(MAKE) -C rv_pid_test
+
+rope:
+	$(MAKE) -C rv_rope_test
+
+profiler:
+	$(MAKE) -C profiler_test
+
+clean:
+	$(MAKE) -C rv_gemmini_test clean
+	$(MAKE) -C rv_pid_test     clean
+	$(MAKE) -C rv_rope_test    clean
+	$(MAKE) -C profiler_test   clean

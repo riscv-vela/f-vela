@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CHIPYARD_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+CHIPYARD_DIR="$(cd "$SCRIPT_DIR/../../../" && pwd)"
 VERILATOR_DIR="$CHIPYARD_DIR/sims/verilator"
+
+echo "Script directory: $SCRIPT_DIR"
+echo "Chipyard root: $CHIPYARD_DIR"
+echo "Verilator root: $VERILATOR_DIR"
 
 CONFIG_NAME="FVelaSoCConfigTest" # default config name
 # CONFIG_NAME="REFV256D128RocketConfig"
@@ -82,7 +86,7 @@ else
     # build release version by default
     echo "Building in release mode"
     echo "Building Verilator simulation..."
-    make -C "$VERILATOR_DIR" CONFIG="$CONFIG_NAME" -j$(nproc)
+    make -C "$VERILATOR_DIR" CONFIG="$CONFIG_NAME" -j$(nproc) VERILATOR_THREADS=4
 fi
 
 if [ $? -eq 0 ]; then

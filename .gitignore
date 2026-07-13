@@ -6,7 +6,9 @@ llama/
 md/
 target/
 _bak/
+bak/
 _link/*
+issue/
 
 # Generated files
 *.log

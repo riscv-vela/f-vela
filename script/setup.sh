@@ -66,6 +66,7 @@ echo "You can now run the verilator build script to build the F-Vela SoC with th
 echo "" 
 
 echo "Next steps:"
-echo "1. Run the verilator build script: script/build_verilator.sh [-c FVelaSoCConfigTest]"
-echo "2. Run the F-Vela SoC tests: script/verilator_sim.sh [-s FVelaSoCConfigTest]"
+echo "1. Run the verilator build script. ex) script/verilator_make.sh [-c FVelaSoCConfigTest]"
+echo "2. Run the test code build script. ex) script/testsw_build.sh"
+echo "3. Run the verilator simulation.   ex) script/run_vsim.sh gemmini ternary_gemm_test.riscv"
 

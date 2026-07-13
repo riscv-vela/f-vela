@@ -41,6 +41,8 @@ object GemminiISA {
   val GEMV_LOOP_WS_CONFIG_STRIDES_AB = 27.U
   val GEMV_LOOP_WS_CONFIG_STRIDES_DC = 28.U
 
+  // Add Profiler: New funct value for setting the profiler's physical address
+  val SET_PROFILER_PADDR = 29.U
 
   // rs1[2:0] values
   val CONFIG_EX = 0.U

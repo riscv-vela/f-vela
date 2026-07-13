@@ -25,6 +25,8 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
     val busy = Output(Bool())
 
     val counter = new CounterEventIO()
+    
+    val profile = new ProfileEventIO(ROB_ID_WIDTH) // Add Profiler: Add a new IO for profiling events
   })
 
   val waiting_for_command :: waiting_for_dma_req_ready :: sending_rows :: Nil = Enum(3)
@@ -184,6 +186,11 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   if (use_firesim_simulation_counters) {
     PerfCounter(io.dma.req.valid && !io.dma.req.ready, "load_dma_wait_cycle", "cycles during which load controller is waiting for DMA to be available")
   }
+
+  // Add Profiler: Initialize the profiler and connect the LD_CTRL_EXECUTE event signal to the command fire signal and the ROB ID of the command
+  ProfileEventIO.init(io.profile)
+  io.profile.connectEventSignal(ProfileEvent.LD_CTRL_EXECUTE, cmd_tracker.io.alloc.fire(), cmd.bits.rob_id.bits) //Profiler: Connect the LD_CTRL_EXECUTE event signal to the command tracker allocation fire signal and the ROB ID of the command
+  // io.profile.connectEventSignal(ProfileEvent.LD_CTRL_EXECUTE, cmd.fire, cmd.bits.rob_id.bits)
 
   // Assertions
   assert(!(cmd_tracker.io.alloc.fire() && cmd_tracker.io.alloc.bits.bytes_to_read === 0.U), "A single mvin instruction must load more than 0 bytes")
