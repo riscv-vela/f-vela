@@ -104,11 +104,6 @@ cd script/
 ```
 
 #### gemmini
-**Spike Simulation**
-```bash
-# usage) spike  risc-v_bin --isa=rv64gcv --log-commits
-spike --extension=gemmini software/test/rv_gemmini_test/build/gemm.riscv --isa=rv64gcv --log-commits
-```
 **Verilator Simulation**
 ```bash
 # run simulation (Baremetal Hardware Simulation)
