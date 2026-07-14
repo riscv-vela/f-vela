@@ -1,6 +1,6 @@
 import numpy as np
 
-# C 코드의 int16_t 입력과 동일
+# rope golden
 x_data_hex = [
     0x2000, 0x4000, 0x6000, 0x7FFF,
     0xE000, 0xC000, 0xA000, 0x8000
