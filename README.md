@@ -46,7 +46,7 @@ If the build-setup.sh script fails on conflict issues sometimes it helps to run 
 ## f_vela install (integrated)
 ```sh
 cd generators
-git clone --branch woojin https://github.com/riscv-vela/f-vela.git _f_vela
+git clone --branch woojin/integration https://github.com/riscv-vela/f-vela.git _f_vela
 cd _f_vela
 sh ./script/setup.sh # patch build_sbt, linking_verilator folder
 ```
