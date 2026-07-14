@@ -16,7 +16,6 @@ m = 65
 # idx=0이면 theta[0], theta[1], theta[2], theta[3] 사용
 idx = 0
 
-
 def to_int16(value):
     """16-bit 값을 signed int16로 변환"""
     return np.int16(value & 0xFFFF)
@@ -62,6 +61,7 @@ y_q15 = np.zeros(8, dtype=np.int16)
 # pair 1: x[2], x[3]
 # pair 2: x[4], x[5]
 # pair 3: x[6], x[7]
+
 for pair in range(4):
     dimension_index = idx + pair
 
@@ -74,7 +74,7 @@ for pair in range(4):
     x_even = x_float[2 * pair]
     x_odd = x_float[2 * pair + 1]
 
-    # 일반적인 RoPE 회전
+    # RoPE 회전
     y_even = x_even * cos_val - x_odd * sin_val
     y_odd = x_even * sin_val + x_odd * cos_val
 

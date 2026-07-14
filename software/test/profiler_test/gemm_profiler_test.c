@@ -19,6 +19,18 @@
 // directly (Profiler.scala printf). The software dump below is delimited by the
 // PROFILE-BEGIN / PROFILE-END markers so the run script can extract exactly the
 // memory-written entries and avoid double counting.
+// /*
+// gemmini_profiler((uint64_t *)P);
+// // Gemmini 작업 진행
+// for (int j = 0; j < profile_data_num; j++)
+// {
+//   if (P[j] == 0)
+//   {
+//     break;
+//   }
+//     printf("%d, %d, %d\n", q_type(P[i][j]), start(P[i][j]), end(P[i][j]));
+// }
+// */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -29,7 +41,7 @@
 #include <sys/mman.h>
 #endif
 
-// ---- Workload dimensions (single small matmul; tweak if you want more events) ----------------------------------------
+// ---- Workload dimensions (single small matmul) ----------------------------------------
 #define PRINT 1
 
 #define ACTIVATION NO_ACTIVATION
@@ -57,21 +69,7 @@ static uint64_t read_cycles() {
     asm volatile ("rdcycle %0" : "=r" (cycles));
     return cycles;
 }
-/*
-gemmini_profiler((uint64_t *)P);
 
-// Gemmini 작업 진행
-
-for (int j = 0; j < profile_data_num; j++)
-{
-  if (P[j] == 0)
-  {
-    break;
-  }
-    printf("%d, %d, %d\n", q_type(P[i][j]), start(P[i][j]), end(P[i][j]));
-}
-
-*/
 // ---- Profile buffer ---------------------------------------------------------------------------------------------------
 // Max number of profile events we can capture. Each entry is 8 bytes. Zero-initialised
 // (in .bss), so a value of 0 marks an unused slot.
@@ -161,12 +159,13 @@ int main() {
 
     // Register the profile buffer with the accelerator.
     printf("Setting profiler address...\n");
-    gemmini_profiler(P);
-
     printf("Starting gemmini matmul\n");
     printf("I: %d, J: %d, K: %d\n", MAT_DIM_I, MAT_DIM_J, MAT_DIM_K);
     printf("NO_BIAS: %d, REPEATING_BIAS: %d\n", NO_BIAS, REPEATING_BIAS);
     printf("A_TRANSPOSE: %d, B_TRANSPOSE: %d\n", A_TRANSPOSE, B_TRANSPOSE);
+
+    gemmini_profiler(P);
+
     uint64_t start = read_cycles();
 
     tiled_matmul_auto(MAT_DIM_I, MAT_DIM_J, MAT_DIM_K,

@@ -64,16 +64,6 @@ int main() {
     }
 #endif
 
-    
-		printf("==============================================\n");
-		printf("  Simulation Starting...\n");
-		printf("  Simulator: simulator-chipyard.harness-FVelaSoCConfigTest\n");
-		printf("  Simulator Path: /home/woojin/_risc_vela/chipyard/sims/verilator/simulator-chipyard.harness-FVelaSoCConfigTest\n");
-		printf("  Binary: ternary_gemm.elf\n");
-		printf("  Log: /home/woojin/_risc_vela/chipyard/generators/_f_vela/software//build/ternary_gemm.elf.log\n");
-		printf("==============================================\n");
-
-
     gemmini_flush(0);
 
     static elem_t full_A[MAT_DIM_I][MAT_DIM_K] row_align(1);

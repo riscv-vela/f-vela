@@ -87,7 +87,7 @@ bash script/verilator_make.sh [-c "FVelaSoCConfigTest"]
 ```
 
 
-#### Test Code Build
+#### Test Code Build example
 PID, Custom RoPE, Custom Gemmini, Profiler Test Program Build 
 ```bash
 source ../../env.sh
@@ -102,7 +102,6 @@ cd script/
 
 # this script create executable files in software/test/[test folder]/build/
 ```
-
 
 #### gemmini
 **Spike Simulation**

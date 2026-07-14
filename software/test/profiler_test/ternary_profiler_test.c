@@ -155,7 +155,6 @@ int main() {
 						ACTIVATION, ACC_SCALE_IDENTITY, 0, REPEATING_BIAS,
 						false, false);                   // full_C, low_D
 
-
 		gemmini_fence();
 
 		uint64_t end = read_cycles();
