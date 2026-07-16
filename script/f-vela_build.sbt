@@ -202,6 +202,22 @@ lazy val chipyard = {
 	}
 	) else Seq.empty
 
+	// @@@@ F-Vela: drop example configs that reference optional generators we do NOT build
+	//   (ara / mempress / aes / compress-acc). Excluding them lets those generators stay
+	//   commented-out in optionalModules above -> much faster build. Small cores that DigitalTop/
+	//   TileFragments reference (nvdla, fft-generator, cva6, ibex, sodor, vexiiriscv) are kept.
+	val fvelaExcludeSettings: Seq[Def.Setting[_]] = Seq(
+	Compile / unmanagedSources := {
+		val files = (Compile / unmanagedSources).value
+		val root = (ThisBuild / baseDirectory).value
+		val excludeList = Seq(
+			"generators/chipyard/src/main/scala/config/AraConfigs.scala",
+			"generators/chipyard/src/main/scala/config/RoCCAcceleratorConfigs.scala"
+		).map(p => (root / p).getCanonicalFile)
+		files.filterNot(f => excludeList.contains(f.getCanonicalFile))
+	}
+	)
+
 	var cy = Project(id = "chipyard", base = file("generators/chipyard"))
 		.dependsOn(baseDeps: _*)
 		.settings(libraryDependencies ++= rocketLibDeps.value)
@@ -216,6 +232,7 @@ lazy val chipyard = {
 		else file("tools/stage/src/main/scala")
 	})
 	.settings(dspExcludeSettings: _*)
+	.settings(fvelaExcludeSettings: _*)
 
 	// Optional modules discovered via initialized submodules (no env or manifest)
 	val optionalModules: Seq[(String, ProjectReference)] = Seq(
@@ -224,15 +241,15 @@ lazy val chipyard = {
 		"ibex" -> ibex,
 		"vexiiriscv" -> vexiiriscv,
 		"riscv-sodor" -> sodor,
-		"ara" -> ara,
-		"saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
-		"tacit" -> tacit,
-		"gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
+		// "ara" -> ara,
+		// "saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
+		// "tacit" -> tacit,
+		// "gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
 		"nvdla" -> nvdla,
-		"radiance" -> radiance,
-		"caliptra-aes-acc" -> caliptra_aes,
-		"compress-acc" -> compressacc,
-		"mempress" -> mempress,
+		// "radiance" -> radiance,
+		// "caliptra-aes-acc" -> caliptra_aes,
+		// "compress-acc" -> compressacc,
+		// "mempress" -> mempress,
 		"fft-generator" -> fft_generator,
 		"_f_vela" -> f_vela, // submodule 로 추가, git submodule update --init generators/_f_vela 로 초기화 필요
 	)

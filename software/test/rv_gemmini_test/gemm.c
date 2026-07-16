@@ -94,14 +94,14 @@ int main() {
     gemmini_fence();
 
     uint64_t end = read_cycles();
-    printf("Cycles taken: %llu\n", end-start);
+    printf("Cycles taken: %lu\n", end-start);
 
     const uint64_t total_macs = MAT_DIM_I * MAT_DIM_J * MAT_DIM_K;
     const uint64_t ideal_cycles = total_macs / (DIM * DIM);
     const uint64_t utilization = 100 * ideal_cycles / (end-start);
-    printf("Total macs: %llu\n", total_macs);
-    printf("Ideal cycles: %llu\n", ideal_cycles);
-    printf("Utilization: %llu%%\n", utilization);
+    printf("Total macs: %lu\n", total_macs);
+    printf("Ideal cycles: %lu\n", ideal_cycles);
+    printf("Utilization: %lu%%\n", utilization);
 
     printf("RDMA_BYTES_REC: %u\n", counter_read(0));
     printf("WDMA_BYTES_SENT: %u\n", counter_read(1));

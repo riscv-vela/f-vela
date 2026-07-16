@@ -20,7 +20,7 @@ libguestfs-test-tool # check 'TEST FINISHED OK'
 
 # Chipyard Install
 conda activate base 
-git clone https://github.com/ucb-bar/chipyard.git
+git clone -b 1.13.0 https://github.com/ucb-bar/chipyard.git
 cd chipyard
 ./build-setup.sh riscv-tools
 ```
