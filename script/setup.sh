@@ -52,8 +52,14 @@ fi
 #   target is backed up as <file>.bak (once, preserving the true original) and then overwritten.
 #   To revert: restore each <file>.bak over <file> (or `git -C generators/rocket-chip checkout`).
 ROCKET_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/rocket-patch"
-if [ -d "$ROCKET_PATCH_DIR/generators" ]; then
-    echo "Applying rocket-chip vector patch from generators/_f_vela/rocket-patch ..."
+# The rocket-patch is a FULL-FILE overwrite of rocket-chip sources built against chipyard 1.13.x.
+# Only apply it on 1.13.x; on other versions overwriting would revert their changes / fail to compile.
+# Version is read from the topmost "## [X.Y.Z]" entry of CHANGELOG.md.
+CY_VER="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$CHIPYARD_DIR/CHANGELOG.md" 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+if [[ "$CY_VER" != 1.13.* ]]; then
+    echo "chipyard version '${CY_VER:-unknown}' is not 1.13.x -> skipping rocket-chip source patch (unnecessary/unsafe on this version)."
+elif [ -d "$ROCKET_PATCH_DIR/generators" ]; then
+    echo "chipyard $CY_VER: applying rocket-chip vector patch from generators/_f_vela/rocket-patch ..."
     while IFS= read -r -d '' pf; do
         rel="${pf#$ROCKET_PATCH_DIR/}"                       # e.g. generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
         target="$CHIPYARD_DIR/$rel"
@@ -76,6 +82,7 @@ fi
 
 # chipyard(verilator, firemarshal, firesim) sims folder linking (optional)
 LINK_DIR="$CHIPYARD_DIR/generators/_f_vela/_link"
+mkdir -p "$LINK_DIR"
 if [ -d "$LINK_DIR" ]; then
     echo "Linking sims/verilator and firesim from $LINK_DIR to $CHIPYARD_DIR..."
     if [ -L "$LINK_DIR/sims/verilator/" ] || [ -L "$LINK_DIR/sims/firesim/" ]; then

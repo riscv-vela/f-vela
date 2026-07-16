@@ -212,7 +212,9 @@ lazy val chipyard = {
 		val root = (ThisBuild / baseDirectory).value
 		val excludeList = Seq(
 			"generators/chipyard/src/main/scala/config/AraConfigs.scala",
-			"generators/chipyard/src/main/scala/config/RoCCAcceleratorConfigs.scala"
+			"generators/chipyard/src/main/scala/config/RoCCAcceleratorConfigs.scala",
+			"generators/chipyard/src/main/scala/config/SaturnConfigs.scala",
+			"generators/chipyard/src/main/scala/config/ShuttleConfigs.scala"
 		).map(p => (root / p).getCanonicalFile)
 		files.filterNot(f => excludeList.contains(f.getCanonicalFile))
 	}
