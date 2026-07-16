@@ -220,20 +220,20 @@ lazy val chipyard = {
 	// Optional modules discovered via initialized submodules (no env or manifest)
 	val optionalModules: Seq[(String, ProjectReference)] = Seq(
 		// Generators with Chipyard-facing glue compiled from their repos
-		// "cva6" -> cva6,
-		// "ibex" -> ibex,
-		// "vexiiriscv" -> vexiiriscv,
-		// "riscv-sodor" -> sodor,
-		// "ara" -> ara,
-		// "saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
-		// "tacit" -> tacit,
-		// "gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
-		// "nvdla" -> nvdla,
-		// "radiance" -> radiance,
-		// "caliptra-aes-acc" -> caliptra_aes,
-		// "compress-acc" -> compressacc,
-		// "mempress" -> mempress,
-		// "fft-generator" -> fft_generator,
+		"cva6" -> cva6,
+		"ibex" -> ibex,
+		"vexiiriscv" -> vexiiriscv,
+		"riscv-sodor" -> sodor,
+		"ara" -> ara,
+		"saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
+		"tacit" -> tacit,
+		"gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
+		"nvdla" -> nvdla,
+		"radiance" -> radiance,
+		"caliptra-aes-acc" -> caliptra_aes,
+		"compress-acc" -> compressacc,
+		"mempress" -> mempress,
+		"fft-generator" -> fft_generator,
 		"_f_vela" -> f_vela, // submodule 로 추가, git submodule update --init generators/_f_vela 로 초기화 필요
 	)
 

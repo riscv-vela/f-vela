@@ -43,6 +43,37 @@ else
     patch -p0 < "$BUILD_SBT_PATCH"
 fi
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Apply the rocket-chip vector patch (needed for the Saturn vector unit + custom PID/RoPE insns).
+#   The patch adds RocketVectorDecoder.io.vector and an EX-stage vector re-decode so a vector op
+#   issued right after a vsetvl is recognized (and stalled) before vconfig settles -- otherwise the
+#   first vector load/arith after vsetvl traps as an illegal instruction.
+#   The patched sources live under generators/_f_vela/rocket-patch/ mirroring the chipyard tree; each
+#   target is backed up as <file>.bak (once, preserving the true original) and then overwritten.
+#   To revert: restore each <file>.bak over <file> (or `git -C generators/rocket-chip checkout`).
+ROCKET_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/rocket-patch"
+if [ -d "$ROCKET_PATCH_DIR/generators" ]; then
+    echo "Applying rocket-chip vector patch from generators/_f_vela/rocket-patch ..."
+    while IFS= read -r -d '' pf; do
+        rel="${pf#$ROCKET_PATCH_DIR/}"                       # e.g. generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
+        target="$CHIPYARD_DIR/$rel"
+        if [ ! -f "$target" ]; then
+            echo "  Warning: target not found, skipping: $rel"
+            continue
+        fi
+        if [ ! -f "$target.bak" ]; then
+            cp "$target" "$target.bak"
+            echo "  Backed up original: $rel -> $rel.bak"
+        else
+            echo "  Backup already exists (keeping original): $rel.bak"
+        fi
+        cp "$pf" "$target"
+        echo "  Patched: $rel"
+    done < <(find "$ROCKET_PATCH_DIR/generators" -type f -name '*.scala' -print0)
+else
+    echo "Warning: rocket-patch directory not found at $ROCKET_PATCH_DIR. Skipping rocket-chip patch."
+fi
+
 # chipyard(verilator, firemarshal, firesim) sims folder linking (optional)
 LINK_DIR="$CHIPYARD_DIR/generators/_f_vela/_link"
 if [ -d "$LINK_DIR" ]; then

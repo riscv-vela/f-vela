@@ -48,8 +48,37 @@ If the build-setup.sh script fails on conflict issues sometimes it helps to run 
 cd generators
 git clone --branch woojin/integration https://github.com/riscv-vela/f-vela.git _f_vela
 cd _f_vela
-sh ./script/setup.sh # patch build_sbt, linking_verilator folder
+sh ./script/setup.sh # patch build.sbt + rocket-chip vector patch + link verilator/firesim
 ```
+
+> **What `setup.sh` does**
+> 1. Backs up `build.sbt` to `build.sbt.bak` and patches it to add the F-Vela config.
+> 2. **Applies the rocket-chip vector patch** (see below).
+> 3. Symlinks `sims/verilator` and `sims/firesim` into `generators/_f_vela/_link/`.
+
+<details>
+<summary>rocket-chip vector patch</summary>
+
+The Saturn vector unit + custom PID/RoPE instructions need a small rocket-chip change.
+The patch:
+- `VectorUnit.scala` — adds `RocketVectorDecoder.io.vector` (reports "is a vector op",
+  independent of legality/`vconfig`).
+- `RocketCore.scala` — drives `id_ctrl.vec` from `io.vector` (so the op is recognized and
+  stalled on the `vconfig` hazard) and re-decodes in EX against the settled `vconfig`
+  (`ex_vec_valid`) so only legal vector ops are issued.
+
+`setup.sh` copies every file under `generators/_f_vela/rocket-patch/generators/` over the
+matching chipyard path, backing up each target as `<file>.bak` (once) first.
+
+```bash
+# revert the rocket-chip patch:
+#   restore each <file>.bak over <file>, e.g.
+cp generators/rocket-chip/src/main/scala/rocket/RocketCore.scala.bak \
+   generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
+# ...or, since rocket-chip is a submodule:
+git -C generators/rocket-chip checkout src/main/scala/rocket/
+```
+</details>
 
 #### folder layout
 ```sh

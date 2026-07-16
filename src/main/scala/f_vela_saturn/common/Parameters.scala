@@ -358,8 +358,16 @@ case class VectorParams(
   tlBuffer: BufferParams = BufferParams.default,
 ) {
   // @@@@ Custom: the PID insns are legal but are not part of any generic FU group; append
-  //   them (SEW-restricted) so the frontend decoder marks them legal and dispatches them.
-  def supported_ex_insns = issStructure.generate(this).map(_.insns).flatten ++ VFPID64B.restrictSEW(3) ++ VFPID32B.restrictSEW(2)
+  //   them so the frontend decoder marks them legal and dispatches them.
+  //   NOTE: do NOT restrictSEW here. This frontend VectorDecoder folds SEW into its match
+  //   index (Cat(rs1,rs2,funct3,funct6,sew)), so restrictSEW(3)/(2) would force the *decode-time*
+  //   vtype.vsew to equal 3/2 for the instruction to be recognized. With the chipyard-1.13.0
+  //   RocketVectorDecoder interface (no io.vector), an unmatched OP-V is not treated as a vector
+  //   op, so it never stalls for the pending vsetvli and decodes against a stale vsew -> the PID
+  //   op raises an illegal-instruction trap. VFPID64B/VFPID32B already differ by funct6
+  //   (fredosum vs fredusum) under OPFVF, so matching on funct3+funct6 alone is unambiguous and
+  //   SEW-independent (this mirrors the known-good 1.13.0 Saturn+PID reference).
+  def supported_ex_insns = issStructure.generate(this).map(_.insns).flatten ++ Seq(VFPID64B, VFPID32B)
 
   require(dLen >= 64, "dLen must be >= 64")
   require((dLen & (dLen - 1)) == 0, "dLen must be power of 2")
