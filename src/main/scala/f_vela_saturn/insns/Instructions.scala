@@ -183,10 +183,7 @@ object FREDUSUM  extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fredus
 object FWREDOSUM extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fwredosum), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W)), Wide2VD.Y, Reduction.Y, AccInitZeros.Y, Elementwise.Y) }
 object FWREDUSUM extends OPFInstruction    { val props = Seq(F6(OPFFunct6.fwredusum), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W)), Wide2VD.Y, Reduction.Y, AccInitZeros.Y) }
 
-/* junseok_generate @@ Custom: PID custom instructions (ported from older Saturn).
- *   Reuse the OPFVF fredosum/fredusum encodings (real vfred* are OPFVV .vs form).
- *   Distinguished from the FP reductions by funct3 (OPFVF) + restrictSEW at dispatch,
- *   and routed exclusively to the CustomSequencer/CustomExecutionUnit in the Backend. */
+/* junseok_generate @@ Custom: PID custom instructions (ported from older Saturn).*/
 object VFPID64B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredosum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
 object VFPID32B  extends OPFInstruction { val props = Seq(F6(OPFFunct6.fredusum) , F3(VectorConsts.OPFVF), FPAdd.Y, FPMul.N, FPSwapVdV2.N, FPFMACmd(0.U(2.W))) }
 /* Custom */
