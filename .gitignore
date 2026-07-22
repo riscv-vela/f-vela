@@ -1,5 +1,6 @@
 # Ignore generated files and folders
 third_party/
+firesim_build_dir/
 build/
 target/
 out/

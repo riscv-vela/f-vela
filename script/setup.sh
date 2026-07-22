@@ -51,7 +51,7 @@ fi
 #   The patched sources live under generators/_f_vela/rocket-patch/ mirroring the chipyard tree; each
 #   target is backed up as <file>.bak (once, preserving the true original) and then overwritten.
 #   To revert: restore each <file>.bak over <file> (or `git -C generators/rocket-chip checkout`).
-ROCKET_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/rocket-patch"
+ROCKET_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/patch/rocket-patch"
 # The rocket-patch is a FULL-FILE overwrite of rocket-chip sources built against chipyard 1.13.x.
 # Only apply it on 1.13.x; on other versions overwriting would revert their changes / fail to compile.
 # Version is read from the topmost "## [X.Y.Z]" entry of CHANGELOG.md.
@@ -80,6 +80,28 @@ else
     echo "Warning: rocket-patch directory not found at $ROCKET_PATCH_DIR. Skipping rocket-chip patch."
 fi
 
+# ----------------------------------------------------------------------------------------------------------------------
+# Firechip patch (FVelaTargetConfigs & TargetConfigs modify)
+FIRECHIP_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/patch/firechip-patch"
+echo "chipyard $CY_VER: applying firechip patch from generators/_f_vela/patch/firechip-patch ..."
+while IFS= read -r -d '' pf; do
+    rel="${pf#$FIRECHIP_PATCH_DIR/}"                       # e.g. generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
+    target="$CHIPYARD_DIR/$rel"
+    if [ ! -f "$target" ]; then
+        echo "  Warning: target not found, skipping: $rel"
+        continue
+    fi
+    if [ ! -f "$target.bak" ]; then
+        cp "$target" "$target.bak"
+        echo "  Backed up original: $rel -> $rel.bak"
+    else
+        echo "  Backup already exists (keeping original): $rel.bak"
+    fi
+    cp "$pf" "$target"
+    echo "  Patched: $rel"
+done < <(find "$FIRECHIP_PATCH_DIR" -type f -name '*.scala' -print0)
+
+# ----------------------------------------------------------------------------------------------------------------------
 # chipyard(verilator, firemarshal, firesim) sims folder linking (optional)
 LINK_DIR="$CHIPYARD_DIR/generators/_f_vela/_link"
 mkdir -p "$LINK_DIR"

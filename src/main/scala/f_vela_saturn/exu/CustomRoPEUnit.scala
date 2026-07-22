@@ -15,12 +15,15 @@ import f_vela_saturn.insns._
 
 object RoPEUnitFactory extends FunctionalUnitFactory {
   // woojin modify: val insns = Seq(VROPE) --> val insns = Seq(VROPE.VX.pipelined(4))로 변경 (RoPEUnit(depth=4)와 일치)
-  val insns = Seq(VROPE.VX.pipelined(4)) // RoPEUnit(depth=4)와 일치: PipelinedExecution + PipelineStagesMinus1(3) 등록
+  // 2단(64x64) LUT 분할로 파이프 1단 추가 (depth 4 -> 5): row-select 레지스터 컷을 넣어
+  // FireSim MidasTransforms(legacy SFC)의 ConstantPropagation이 4096-way 단일 mux tree를
+  // 순회하다 StackOverflowError 나던 문제를 회피한다.
+  val insns = Seq(VROPE.VX.pipelined(5)) // RoPEUnit(depth=5)와 일치: PipelinedExecution + PipelineStagesMinus1(4) 등록
   def generate(implicit p: Parameters): FunctionalUnit = new RoPEUnit
 }
 
 class RoPEUnit(implicit p: Parameters)
-  extends PipelinedFunctionalUnit(depth = 4)
+  extends PipelinedFunctionalUnit(depth = 5)
   with HasVectorParams
   with HasCoreParameters {
 
@@ -40,17 +43,19 @@ class RoPEUnit(implicit p: Parameters)
   io.set_fflags.valid   := false.B
   io.set_fflags.bits    := 0.U
 
-  // 내부 stage valid
+  // 내부 stage valid (LUT 2단 분할로 1단 추가: v0..v4, 총 5단)
   val v0 = io.pipe(0).valid
   val v1 = RegNext(v0, false.B)
   val v2 = RegNext(v1, false.B)
   val v3 = RegNext(v2, false.B)
+  val v4 = RegNext(v3, false.B)
 
   // 내부 stage bits 전달
   val u0 = io.pipe(0).bits
   val u1 = RegEnable(u0, 0.U.asTypeOf(u0), v0)
   val u2 = RegEnable(u1, 0.U.asTypeOf(u1), v1)
   val u3 = RegEnable(u2, 0.U.asTypeOf(u2), v2)
+  val u4 = RegEnable(u3, 0.U.asTypeOf(u3), v3)
 
   // ---------------------------------------------------------------------------
   // S0: 입력 슬라이스 추출
@@ -70,9 +75,9 @@ class RoPEUnit(implicit p: Parameters)
   }
 
   // ---------------------------------------------------------------------------
-  // S1: LUT index 계산 & 메모리 read 요청
+  // S1: LUT row/col index 계산
   // q = m/64, r = m%64, i0 = (idx%128)/2 → [i0..i0+3]
-  // A: addrA = q*64 + i, B: addrB = r*64 + i
+  // row(q or r)로 64개 row 중 하나를 고르고, col(i)로 그 row 안에서 하나를 고른다
   // ---------------------------------------------------------------------------
   val s1_q   = RegEnable(s0_m(11,6), 0.U, v0)                       // 0..63
   val s1_r   = RegEnable(s0_m( 5,0), 0.U, v0)                       // 0..63
@@ -92,17 +97,14 @@ class RoPEUnit(implicit p: Parameters)
   s1_i(2) := (s1_i0 + 2.U)(5,0)
   s1_i(3) := (s1_i0 + 3.U)(5,0)
 
-  // 주소 생성 (order 스위치 반영)
-  def addrA(q: UInt, i: UInt): UInt = if (A_I_MAJOR) Cat(i, q)(11,0) else Cat(q, i)(11,0)
-  def addrB(r: UInt, i: UInt): UInt = if (B_I_MAJOR) Cat(i, r)(11,0) else Cat(r, i)(11,0)
-
   val lutDepth = 4096
+  val lutCols  = 64   // q, r, i 각각 0..63 (addr = row*64 + i, row-major 주소 체계 가정)
   // A는 FP16(half) 저장, B는 INT8 저장 (기존 코드 + import chisel3.util.experimental.loadMemoryFromFileInline)
   // val lutA = SyncReadMem(lutDepth, UInt(32.W)) // {sinA, cosA}
   // val lutB = SyncReadMem(lutDepth, UInt(16.W)) // {sinB, cosB}
   // loadMemoryFromFileInline(lutA, "lutA.hex")
   // loadMemoryFromFileInline(lutB, "lutB.hex")
-  
+
   // woojin modify (debugging용)
   // ---------------------------------------------------------------------------
   // LUT를 elaboration(빌드) 시점에 hex에서 읽어 상수 ROM(VecInit)으로 굽는다.
@@ -129,33 +131,55 @@ class RoPEUnit(implicit p: Parameters)
     vals
   }
 
-  val lutA_rom = VecInit(loadLutHex("lutA.hex", 32))
-  val lutB_rom = VecInit(loadLutHex("lutB.hex", 16))
+  // ---------------------------------------------------------------------------
+  // 2단(64x64) LUT: 예전엔 4096-entry flat Vec을 동적 인덱스 8번(rdA/rdB x 4) 읽었는데,
+  // FireSim MidasTransforms의 legacy SFC ConstantPropagation(regConstant$1)이 그 4096-way
+  // mux tree를 하나의 레지스터 fan-in으로 재귀 순회하다가 StackOverflowError를 냈다.
+  // row(64-way) select를 레지스터로 한 번 끊고 col(64-way) select를 다음 사이클에 하도록
+  // 나눠서 fan-in을 4096 -> 64+64로 줄인다. (S1: row select 준비 → S2: row 레지스터 →
+  // S3: row 안에서 col select = 실제 LUT 데이터 확정)
+  // requires A_I_MAJOR=false, B_I_MAJOR=false (addr = row*64 + i, row-major)
+  // ---------------------------------------------------------------------------
+  require(!A_I_MAJOR && !B_I_MAJOR,
+    "[RoPEUnit] 2-level LUT split assumes row-major addressing (addr = row*64 + i)")
+  val lutA_2d = VecInit(loadLutHex("lutA.hex", 32).grouped(lutCols).map(VecInit(_)).toSeq)
+  val lutB_2d = VecInit(loadLutHex("lutB.hex", 16).grouped(lutCols).map(VecInit(_)).toSeq)
   // ---------------------------------------------------------------------------
 
-  val s1_addrA  = Wire(Vec(4, UInt(12.W)))
-  val s1_addrB  = Wire(Vec(4, UInt(12.W)))
-  val rdA       = Wire(Vec(4, UInt(32.W)))
-  val rdB       = Wire(Vec(4, UInt(16.W)))
+  // ---------------------------------------------------------------------------
+  // S2 (신규): row select 레지스터 컷.
+  // q/r로 64개 row 중 하나만 골라 레지스터에 담아, S3에서 그 64개짜리 row 안에서만
+  // col(i) select 하도록 함 (SyncReadMem과 동일한 1-cycle read latency 유지).
+  // ---------------------------------------------------------------------------
+  val s2_rowA = RegEnable(lutA_2d(s1_q), VecInit(Seq.fill(lutCols)(0.U(32.W))), v1)
+  val s2_rowB = RegEnable(lutB_2d(s1_r), VecInit(Seq.fill(lutCols)(0.U(16.W))), v1)
+  val s2_i    = RegEnable(s1_i,          VecInit(Seq.fill(4)(0.U(6.W))),       v1)
 
+  // 파이프라인 레지스터 (v1 -> v2)
+  val s2_x   = RegEnable(s1_x,   VecInit(Seq.fill(8)(0.S(16.W))), v1)
+  val s2_vd  = RegEnable(s1_vd,  0.U.asTypeOf(s1_vd),  v1)
+  val s2_vm  = RegEnable(s1_vm,  false.B,              v1)
+  val s2_vl  = RegEnable(s1_vl,  0.U.asTypeOf(s1_vl),  v1)
+  val s2_sew = RegEnable(s1_sew, 0.U.asTypeOf(s1_sew), v1)
+  val s2_idx = RegEnable(s1_idx, 0.U,                  v1)
+
+  // ---------------------------------------------------------------------------
+  // S3: row 안에서 col(i) select → 실제 LUT 데이터 확정 (rdA/rdB) + 데이터 변환
+  // ---------------------------------------------------------------------------
+  val rdA = Wire(Vec(4, UInt(32.W)))
+  val rdB = Wire(Vec(4, UInt(16.W)))
   for (k <- 0 until 4) {
-    s1_addrA(k) := addrA(s1_q, s1_i(k)) // q*64 + i
-    s1_addrB(k) := addrB(s1_r, s1_i(k)) // r*64 + i
-
-    // SyncReadMem과 동일한 1-cycle read latency 유지 (S1 주소 → S2 데이터)
-    rdA(k) := RegEnable(lutA_rom(s1_addrA(k)), v1)
-    rdB(k) := RegEnable(lutB_rom(s1_addrB(k)), v1)
+    rdA(k) := RegEnable(s2_rowA(s2_i(k)), v2)
+    rdB(k) := RegEnable(s2_rowB(s2_i(k)), v2)
   }
 
-  // ---------------------------------------------------------------------------
-  // S2: LUT 데이터 변환 (고정소수점 유틸 & 포맷 변환)
-  // ---------------------------------------------------------------------------
-  val s2_x   = RegEnable(s1_x,   VecInit(Seq.fill(8)(0.S(16.W))), v1)
-  val s2_vd  = RegEnable(s1_vd,  0.U.asTypeOf(s1_vd),             v1)
-  val s2_vm  = RegEnable(s1_vm,  false.B,                         v1)
-  val s2_vl  = RegEnable(s1_vl,  0.U.asTypeOf(s1_vl),             v1)
-  val s2_sew = RegEnable(s1_sew, 0.U.asTypeOf(s1_sew),            v1)
-  val s2_idx = RegEnable(s1_idx, 0.U,                             v1)
+  // 파이프라인 레지스터 (v2 -> v3)
+  val s3_x   = RegEnable(s2_x,   VecInit(Seq.fill(8)(0.S(16.W))), v2)
+  val s3_vd  = RegEnable(s2_vd,  0.U.asTypeOf(s2_vd),             v2)
+  val s3_vm  = RegEnable(s2_vm,  false.B,                         v2)
+  val s3_vl  = RegEnable(s2_vl,  0.U.asTypeOf(s2_vl),             v2)
+  val s3_sew = RegEnable(s2_sew, 0.U.asTypeOf(s2_sew),            v2)
+  val s3_idx = RegEnable(s2_idx, 0.U,                             v2)
 
   def q15SatWithFlag(x: SInt): (SInt, Bool) = {
     val max = ( 32767).S(16.W); val min = (-32768).S(16.W)
@@ -210,18 +234,18 @@ class RoPEUnit(implicit p: Parameters)
     (s8 << 8).asSInt
   }
 
-  // 합성
-  val s2_cos_w = Wire(Vec(4, SInt(16.W)))
-  val s2_sin_w = Wire(Vec(4, SInt(16.W)))
-  val s2_sat_w = Wire(Bool())
+  // 합성 (S3: rdA/rdB가 확정된 사이클에 바로 변환)
+  val s3_cos_w = Wire(Vec(4, SInt(16.W)))
+  val s3_sin_w = Wire(Vec(4, SInt(16.W)))
+  val s3_sat_w = Wire(Bool())
 
   for (k <- 0 until 4) {
-    s2_cos_w(k) := 0.S(16.W)
-    s2_sin_w(k) := 0.S(16.W)
+    s3_cos_w(k) := 0.S(16.W)
+    s3_sin_w(k) := 0.S(16.W)
   }
-  s2_sat_w := false.B
+  s3_sat_w := false.B
 
-  when (v2) {
+  when (v3) {
     var anySat = false.B
     for (k <- 0 until 4) {
       val cosA_q15 = fp16_to_q15(rdA(k)(15, 0))
@@ -234,71 +258,71 @@ class RoPEUnit(implicit p: Parameters)
       val (cSat, cF) = q15SatWithFlag(cRaw)
       val (sSat, sF) = q15SatWithFlag(sRaw)
 
-      s2_cos_w(k) := cSat
-      s2_sin_w(k) := sSat
+      s3_cos_w(k) := cSat
+      s3_sin_w(k) := sSat
       anySat = anySat || cF || sF
     }
-    s2_sat_w := anySat
+    s3_sat_w := anySat
   }
-  
+
   // ---------------------------------------------------------------------------
-  // S3: RoPE 회전 & Writeback
+  // S4: RoPE 회전 & Writeback
   // cos(mθᵢ) = cosA·cosB − sinA·sinB
   // sin(mθᵢ) = sinA·cosB + cosA·sinB
   // ---------------------------------------------------------------------------
-  val s3_x   = RegEnable(s2_x,   VecInit(Seq.fill(8)(0.S(16.W))), v2)
-  val s3_vd  = RegEnable(s2_vd,  0.U.asTypeOf(s2_vd),             v2)
-  val s3_vm  = RegEnable(s2_vm,  false.B,                         v2)
-  val s3_vl  = RegEnable(s2_vl,  0.U.asTypeOf(s2_vl),             v2)
-  val s3_sew = RegEnable(s2_sew, 0.U.asTypeOf(s2_sew),            v2)
-  val s3_idx = RegEnable(s2_idx, 0.U,                             v2)
+  val s4_x   = RegEnable(s3_x,   VecInit(Seq.fill(8)(0.S(16.W))), v3)
+  val s4_vd  = RegEnable(s3_vd,  0.U.asTypeOf(s3_vd),             v3)
+  val s4_vm  = RegEnable(s3_vm,  false.B,                         v3)
+  val s4_vl  = RegEnable(s3_vl,  0.U.asTypeOf(s3_vl),             v3)
+  val s4_sew = RegEnable(s3_sew, 0.U.asTypeOf(s3_sew),            v3)
+  val s4_idx = RegEnable(s3_idx, 0.U,                             v3)
 
-  val s3_cos      = RegEnable(s2_cos_w, VecInit(Seq.fill(4)(0.S(16.W))), v2)
-  val s3_sin      = RegEnable(s2_sin_w, VecInit(Seq.fill(4)(0.S(16.W))), v2)
-  val s3_sat_trig = RegEnable(s2_sat_w, false.B, v2)
+  val s4_cos      = RegEnable(s3_cos_w, VecInit(Seq.fill(4)(0.S(16.W))), v3)
+  val s4_sin      = RegEnable(s3_sin_w, VecInit(Seq.fill(4)(0.S(16.W))), v3)
+  val s4_sat_trig = RegEnable(s3_sat_w, false.B, v3)
 
-  val s3_y = Wire(Vec(8, SInt(16.W)))
+  val s4_y = Wire(Vec(8, SInt(16.W)))
   var anySatXY = false.B
 
   for (i <- 0 until 4) {
-    val x0 = s3_x(2*i)
-    val x1 = s3_x(2*i+1)
-    val c  = s3_cos(i)
-    val s  = s3_sin(i)
+    val x0 = s4_x(2*i)
+    val x1 = s4_x(2*i+1)
+    val c  = s4_cos(i)
+    val s  = s4_sin(i)
 
     val y0Raw = mulQ15(x0, c) - mulQ15(x1, s)
     val y1Raw = mulQ15(x1, c) + mulQ15(x0, s)
     val (y0, f0) = q15SatWithFlag(y0Raw)
     val (y1, f1) = q15SatWithFlag(y1Raw)
 
-    s3_y(2*i)   := y0
-    s3_y(2*i+1) := y1
+    s4_y(2*i)   := y0
+    s4_y(2*i+1) := y1
     anySatXY = anySatXY || f0 || f1
   }
 
   // tail/마스크 처리
-  val diff = Mux(s3_vl > s3_idx, s3_vl - s3_idx, 0.U)
+  val diff = Mux(s4_vl > s4_idx, s4_vl - s4_idx, 0.U)
   val lanesActive = Mux(diff >= 8.U, 8.U, diff(2,0))
 
-  val s3_vmask = Mux(s3_vm, "hFF".U(8.W), u3.rmask(7,0))
+  val s4_vmask = Mux(s4_vm, "hFF".U(8.W), u4.rmask(7,0))
 
-  val s3_y_final = Wire(Vec(8, SInt(16.W)))
+  val s4_y_final = Wire(Vec(8, SInt(16.W)))
   for (i <- 0 until 8) {
-    val active = (i.U < lanesActive) && s3_vmask(i).asBool
-    s3_y_final(i) := Mux(active, s3_y(i), s3_x(i))
+    val active = (i.U < lanesActive) && s4_vmask(i).asBool
+    s4_y_final(i) := Mux(active, s4_y(i), s4_x(i))
   }
 
-  val s3_anySat = s3_sat_trig || anySatXY
-  io.set_vxsat := v3 && s3_anySat
+  val s4_anySat = s4_sat_trig || anySatXY
+  io.set_vxsat := v4 && s4_anySat
 
-  val wbData = Cat(s3_y_final.reverse.map(_.asUInt)) // 128b
+  val wbData = Cat(s4_y_final.reverse.map(_.asUInt)) // 128b
 
-  io.write.valid     := v3
+  io.write.valid     := v4
   io.write.bits.data := wbData
-  // Woojin modify: s3_idx >> 3.U 대신 u3.wvd_eg 사용 (wvd_eg는 vd의 element-group index를 나타냄)
-  io.write.bits.eg   := u3.wvd_eg       // 목적지 vd의 물리 element-group (idx가 아니라 wvd_eg 사용)
+  // Woojin modify: idx >> 3.U 대신 wvd_eg 사용 (wvd_eg는 vd의 element-group index를 나타냄)
+  io.write.bits.eg   := u4.wvd_eg       // 목적지 vd의 물리 element-group (idx가 아니라 wvd_eg 사용)
   io.write.bits.mask := Fill(128, 1.U)
-  
+
   // ---------------------------------------------------------------------------
   // 디버그 로그: 각 파이프 스테이지가 유효할 때 출력
   // (+verbose 추가 후 verilator 실행 시 build/*.log 및 콘솔 stdout으로 나감)
@@ -309,16 +333,16 @@ class RoPEUnit(implicit p: Parameters)
       s0_xSlice(0).asUInt, s0_xSlice(1).asUInt, s0_xSlice(2).asUInt, s0_xSlice(3).asUInt)
   }
   when (v1) {
-    printf(p"[RoPE S1] q=${s1_q} r=${s1_r} i0=${s1_i0} addrA0=${s1_addrA(0)} addrB0=${s1_addrB(0)}\n")
-  }
-  when (v2) {
-    printf("[RoPE S2] rdA0=0x%x rdB0=0x%x cos0=0x%x sin0=0x%x sat=%d\n",
-      rdA(0), rdB(0), s2_cos_w(0).asUInt, s2_sin_w(0).asUInt, s2_sat_w)
+    printf(p"[RoPE S1] q=${s1_q} r=${s1_r} i0=${s1_i0}\n")
   }
   when (v3) {
-    printf("[RoPE S3] y0=0x%x y1=0x%x y2=0x%x y3=0x%x\n",
-      s3_y_final(0).asUInt, s3_y_final(1).asUInt, s3_y_final(2).asUInt, s3_y_final(3).asUInt)
+    printf("[RoPE S3] rdA0=0x%x rdB0=0x%x cos0=0x%x sin0=0x%x sat=%d\n",
+      rdA(0), rdB(0), s3_cos_w(0).asUInt, s3_sin_w(0).asUInt, s3_sat_w)
+  }
+  when (v4) {
+    printf("[RoPE S4] y0=0x%x y1=0x%x y2=0x%x y3=0x%x\n",
+      s4_y_final(0).asUInt, s4_y_final(1).asUInt, s4_y_final(2).asUInt, s4_y_final(3).asUInt)
     printf("[RoPE WB] valid=%d vd=%d eg=%d data=0x%x\n",
-      io.write.valid, s3_vd, io.write.bits.eg, wbData)
+      io.write.valid, s4_vd, io.write.bits.eg, wbData)
   }
 }

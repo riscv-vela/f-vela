@@ -14,6 +14,36 @@ class FVelaSoCConfigTest extends Config(
 	new chipyard.config.AbstractConfig
 )
 
+class FVelaGemminiOnlyConfig extends Config(
+    new f_vela_gemmini.GemminiCustomConfig() ++
+    new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+    new chipyard.config.WithSystemBusWidth(128) ++
+    new chipyard.config.AbstractConfig
+)
+
+class FVelaSaturnOnlyConfig extends Config(
+    new f_vela_saturn.rocket.WithRocketVectorUnit(
+        512,
+        256,
+        VectorParams.refParams
+    ) ++
+    new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+    new chipyard.config.WithSystemBusWidth(128) ++
+    new chipyard.config.AbstractConfig
+)
+
+class FVelaSaturnMinConfig extends Config(
+    new f_vela_saturn.rocket.WithRocketVectorUnit(
+        512,
+        128,
+        VectorParams.minParams
+    ) ++
+    new freechips.rocketchip.rocket.WithNHugeCores(1) ++
+    new chipyard.config.WithSystemBusWidth(128) ++
+    new chipyard.config.AbstractConfig
+)
+
+
 // legacy verilator version 
 // class SaturnGemminiConfig extends Config(
 //     new gemmini.DefaultGemminiConfig ++                            // use Gemmini systolic array GEMM accelerator
