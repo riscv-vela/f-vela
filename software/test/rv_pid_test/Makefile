@@ -5,8 +5,9 @@
 #   Mirrors the flags in this folder's CMakeLists.txt (rv64imafdv / lp64d, htif specs).
 #
 #   usage:
-#     make            # build every test
+#     make            # build every test (bare-metal)
 #     make vfpid_4f   # build a single test (target == source basename)
+#     make linux      # build *_linux.c sources for Linux (firemarshal/busybox) userspace
 #     make clean
 #
 #   The RISC-V toolchain is added to PATH automatically from Chipyard's conda env.
@@ -39,12 +40,13 @@ CFLAGS  := -std=gnu99 -O2 -Wall -Wextra \
 LDFLAGS := -static -Wl,-u,_printf_float
 
 # ---- Sources / targets -----------------------------------------------------------------------------------------------
-SRCS    := $(wildcard *.c)
+# *_linux.c sources are built separately by `make linux` below, so they're excluded here.
+SRCS    := $(filter-out %_linux.c,$(wildcard *.c))
 PROGS   := $(basename $(SRCS))
 TARGETS := $(addprefix $(BUILD_DIR)/,$(addsuffix .riscv,$(PROGS)))
 DUMPS   := $(addprefix $(BUILD_DIR)/,$(addsuffix .dump,$(PROGS)))
 
-.PHONY: all clean $(PROGS)
+.PHONY: all clean linux $(PROGS)
 all: $(TARGETS) $(DUMPS)
 
 $(PROGS): %: $(BUILD_DIR)/%.riscv $(BUILD_DIR)/%.dump
@@ -57,6 +59,34 @@ $(BUILD_DIR)/%.dump: $(BUILD_DIR)/%.riscv
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
+
+# ---- Linux userspace build (for firemarshal/busybox images) ----------------------------------------------------------
+#   Builds *_linux.c sources against the riscv64-unknown-linux-gnu toolchain (Linux ABI, no htif
+#   specs) into ./build/linux/*.linux (+ *.dump). These use the unprivileged `cycle` CSR instead of
+#   `mcycle` for timing, since mcycle is M-mode-only and traps under a Linux user process.
+LINUX_PREFIX  ?= riscv64-unknown-linux-gnu-
+LINUX_CC      := $(LINUX_PREFIX)gcc
+LINUX_OBJDUMP := $(LINUX_PREFIX)objdump
+
+LINUX_BUILD_DIR := build/linux
+LINUX_CFLAGS     := -std=gnu99 -O2 -Wall -Wextra \
+                     -march=$(ARCH) -mabi=$(ABI) -static
+
+LINUX_SRCS    := $(wildcard *_linux.c)
+LINUX_PROGS   := $(basename $(LINUX_SRCS))
+LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(LINUX_PROGS)))
+LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(LINUX_PROGS)))
+
+linux: $(LINUX_TARGETS) $(LINUX_DUMPS)
+
+$(LINUX_BUILD_DIR)/%.linux: %.c | $(LINUX_BUILD_DIR)
+	$(LINUX_CC) $(LINUX_CFLAGS) $< -o $@
+
+$(LINUX_BUILD_DIR)/%.dump: $(LINUX_BUILD_DIR)/%.linux
+	$(LINUX_OBJDUMP) -D $< > $@
+
+$(LINUX_BUILD_DIR):
+	mkdir -p $(LINUX_BUILD_DIR)
 
 clean:
 	rm -rf $(BUILD_DIR)

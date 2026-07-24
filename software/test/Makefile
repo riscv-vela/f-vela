@@ -4,15 +4,16 @@
 #   Builds the gemmini, pid, rope and profiler test folders by delegating to each folder's own Makefile.
 #
 #   usage:
-#     make            # build all (gemmini + pid + rope + profiler)
+#     make            # build all (gemmini + pid + rope + profiler), bare-metal
 #     make gemmini    # build only rv_gemmini_test
 #     make pid        # build only rv_pid_test
 #     make rope       # build only rv_rope_test
 #     make profiler   # build only profiler_test
+#     make linux      # build the Linux (firemarshal/busybox) userspace variants of all tests
 #     make clean      # clean all
 ########################################################################################################################
 
-.PHONY: all gemmini pid rope profiler clean
+.PHONY: all gemmini pid rope profiler linux clean
 
 all: gemmini pid rope profiler
 
@@ -27,6 +28,12 @@ rope:
 
 profiler:
 	$(MAKE) -C profiler_test
+
+linux:
+	$(MAKE) -C rv_gemmini_test linux
+	$(MAKE) -C rv_pid_test     linux
+	$(MAKE) -C rv_rope_test    linux
+	$(MAKE) -C profiler_test   linux
 
 clean:
 	$(MAKE) -C rv_gemmini_test clean
