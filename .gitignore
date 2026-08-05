@@ -24,3 +24,11 @@ tmp/
 # Documentation files
 AGENTS.md
 CLAUDE.md
+
+# vivado files
+.Xil/
+*.jou
+*.log
+*.str
+*.bit
+*.xdc

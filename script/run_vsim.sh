@@ -57,9 +57,10 @@ case "$TEST_TYPE" in
     pid)     BUILD_DIR="$SOFTWARE_DIR/test/rv_pid_test/build";     DEFAULT_PROG="vfpid_4d"     ;;
     rope)    BUILD_DIR="$SOFTWARE_DIR/test/rv_rope_test/build";    DEFAULT_PROG="vfrope_test"  ;;
     profiler) BUILD_DIR="$SOFTWARE_DIR/test/profiler_test/build"; DEFAULT_PROG="vfprofiler_test"  ;;
+    integ) BUILD_DIR="$SOFTWARE_DIR/test/integ_test/build"; DEFAULT_PROG="vfinteg_test"  ;;
     -h|--help|"") usage; exit 0 ;;
     *)
-        echo "Unknown test type: '$TEST_TYPE' (expected gemmini | pid | rope | profiler)"
+        echo "Unknown test type: '$TEST_TYPE' (expected gemmini | pid | rope | profiler | integ)"
         usage
         exit 1
         ;;
