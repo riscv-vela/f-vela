@@ -21,6 +21,12 @@
 #     -c, --max-cycles N   +max-cycles value (default: 100000000).
 #     -v, --verbose        pass +verbose to the simulator (default: off).
 #         --no-verbose     do not pass +verbose (explicit; this is the default).
+#     -w, --wave           dump a waveform. Uses the debug (trace-enabled) simulator binary
+#                          (build it first with 'verilator_make.sh -d'), i.e. "<sim>-debug".
+#                          Waveform is written next to the log as <program>.vcd (or .fst).
+#         --fst            use FST format instead of VCD for the waveform (implies -w).
+#                          Must match how the debug binary was built (verilator_make.sh --fst).
+#     -g, --gtkwave        after the run, open the dumped waveform in gtkwave (implies -w).
 #     -h, --help           show this help.
 #
 #   examples:
@@ -29,6 +35,9 @@
 #     ./run_sim.sh pid vfpid_4d
 #     ./run_sim.sh rope vfrope_test
 #     ./run_sim.sh gemmini --list
+#     ./run_sim.sh gemmini gemm -w         # run + dump waveform (gemm.vcd)
+#     ./run_sim.sh gemmini gemm -w --fst   # run + dump waveform in FST format (gemm.fst)
+#     ./run_sim.sh gemmini gemm -g         # run + dump waveform + open it in gtkwave
 ########################################################################################################################
 
 set -o pipefail
@@ -44,9 +53,12 @@ SIMULATOR="simulator-chipyard.harness-FVelaSoCConfigTest"
 MAX_CYCLES=100000000
 DO_LIST=false
 VERBOSE=false
+DUMP_WAVE=false
+USE_FST=false
+OPEN_GTKWAVE=false
 
 usage() {
-    sed -n '4,31p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\}//'
+    sed -n '4,40p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\}//'
 }
 
 # --- positional: test type --------------------------------------------------------------------------------------------
@@ -81,6 +93,9 @@ while [[ $# -gt 0 ]]; do
         -l|--list)       DO_LIST=true;    shift ;;
         -v|--verbose)    VERBOSE=true;    shift ;;
         --no-verbose)    VERBOSE=false;   shift ;;
+        -w|--wave)       DUMP_WAVE=true;  shift ;;
+        --fst)           DUMP_WAVE=true;  USE_FST=true; shift ;;
+        -g|--gtkwave)    DUMP_WAVE=true;  OPEN_GTKWAVE=true; shift ;;
         -h|--help)       usage; exit 0 ;;
         -*)
             echo "Unknown option: $1"; usage; exit 1 ;;
@@ -122,10 +137,19 @@ if [ -z "$ELF_FILE" ]; then
 fi
 ELF_NAME="$(basename "$ELF_FILE")"
 
+# --- waveform dump needs the debug (trace-enabled) simulator binary -------------------------------------------------
+if $DUMP_WAVE; then
+    [[ "$SIMULATOR" == *-debug ]] || SIMULATOR="${SIMULATOR}-debug"
+fi
+
 SIM_PATH="$VERILATOR_DIR/$SIMULATOR"
 if [ ! -f "$SIM_PATH" ]; then
     echo "Simulator not found: $SIM_PATH"
-    echo "Build it first in sims/verilator (e.g. run script/verilator_make.sh)."
+    if $DUMP_WAVE; then
+        echo "Build the debug/waveform-capable binary first: script/verilator_make.sh -d $([ "$USE_FST" = true ] && echo '--fst')"
+    else
+        echo "Build it first in sims/verilator (e.g. run script/verilator_make.sh)."
+    fi
     exit 1
 fi
 
@@ -140,6 +164,12 @@ fi
 
 LOG_FILE="$BUILD_DIR/${ELF_NAME}.log"
 
+WAVE_FILE=""
+if $DUMP_WAVE; then
+    WAVE_EXT=$($USE_FST && echo "fst" || echo "vcd")
+    WAVE_FILE="$BUILD_DIR/${ELF_NAME}.${WAVE_EXT}"
+fi
+
 echo "=============================================="
 echo "  Simulation Starting..."
 echo "  Test type: $TEST_TYPE"
@@ -147,6 +177,7 @@ echo "  Simulator: $SIMULATOR"
 echo "  Binary:    $ELF_NAME"
 echo "  Verbose:   $VERBOSE"
 echo "  Log:       $LOG_FILE"
+$DUMP_WAVE && echo "  Waveform:  $WAVE_FILE"
 echo "=============================================="
 
 # --- environment ------------------------------------------------------------------------------------------------------
@@ -156,6 +187,7 @@ ulimit -s unlimited
 # --- assemble simulator plusargs --------------------------------------------------------------------------------------
 SIM_ARGS=( +permissive )
 $VERBOSE && SIM_ARGS+=( +verbose )
+$DUMP_WAVE && SIM_ARGS+=( +vcdfile="$WAVE_FILE" )
 SIM_ARGS+=( +max-cycles="$MAX_CYCLES" +permissive-off )
 
 # --- run (bare-metal) -------------------------------------------------------------------------------------------------
@@ -182,4 +214,21 @@ if [ $STATUS -eq 0 ]; then
 else
     echo "  Simulation Encountered an Error (exit $STATUS)"
     exit 1
+fi
+
+# --- waveform viewing --------------------------------------------------------------------------------------------------
+if $DUMP_WAVE; then
+    if [ -f "$WAVE_FILE" ]; then
+        echo "  Waveform written: $WAVE_FILE"
+        if $OPEN_GTKWAVE; then
+            if command -v gtkwave >/dev/null 2>&1; then
+                echo "  Opening $WAVE_FILE in gtkwave..."
+                gtkwave "$WAVE_FILE" &
+            else
+                echo "  gtkwave not found in PATH; open $WAVE_FILE manually (e.g. with gtkwave or surfer)."
+            fi
+        fi
+    else
+        echo "  Warning: expected waveform file not found: $WAVE_FILE"
+    fi
 fi

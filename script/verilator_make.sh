@@ -23,7 +23,12 @@ usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "  -c, --config <name>   Set CONFIG_NAME (default: $CONFIG_NAME)"
     echo "                        Ex: -c MyCustomConfig (package 'chipyard.' is added automatically)"
-    echo "  -d, --debug <name>    Set VERILATOR_DEBUG=1 for debug build (default: release build)"
+    echo "  -d, --debug           Set VERILATOR_DEBUG=1 for a debug build (default: release build)."
+    echo "                        Also builds the *-debug binary with waveform tracing enabled"
+    echo "                        (--trace), so run_vsim.sh -w can dump a VCD waveform."
+    echo "  -w, --wave            Alias for -d/--debug (build with waveform tracing enabled)."
+    echo "  --fst                 Use FST instead of VCD for the waveform (sets USE_FST=1)."
+    echo "                        Only takes effect together with -d/--debug/-w."
     echo "  --clean               Run 'make clean' before building"
     echo "  -h, --help            Display this help message"
     exit 1
@@ -39,16 +44,21 @@ while [[ $# -gt 0 ]]; do
         --clean)
             DO_CLEAN=true
             shift
-            ;;        
-        -d|--debug)
+            ;;
+        -d|--debug|-w|--wave)
             export VERILATOR_DEBUG=1
+            shift
+            ;;
+        --fst)
+            export USE_FST=1
             shift
             ;;
         -h|--help)
             usage
             echo "Example usage:"
             echo "  $0 -c MyCustomConfig (default: $CONFIG_NAME)"
-            echo "  $0 -d (build in debug mode)"
+            echo "  $0 -d (build in debug mode, with waveform tracing enabled)"
+            echo "  $0 -d --fst (debug build, dump waveform as FST instead of VCD)"
             echo "  $0 --clean"
             exit 0
             ;;
@@ -79,7 +89,8 @@ fi
 
 if [ -n "$VERILATOR_DEBUG" ]; then
     # build debug version if VERILATOR_DEBUG is set
-    echo "Building in debug mode (VERILATOR_DEBUG=1)"
+    echo "Building in debug mode (VERILATOR_DEBUG=1), waveform tracing enabled"
+    echo "Waveform format: $([ "$USE_FST" = "1" ] && echo FST || echo VCD) (USE_FST=${USE_FST:-0})"
     echo "Building Verilator simulation..."
     make -C "$VERILATOR_DIR" debug CONFIG="$CONFIG_NAME" -j$(nproc)
 else
