@@ -12,7 +12,7 @@ BASE = 10000.0
 # RoPE position
 m = 65
 
-# 벡터의 시작 dimension pair index
+# 벡터 시작 dimension pair index
 # idx=0이면 theta[0], theta[1], theta[2], theta[3] 사용
 idx = 0
 

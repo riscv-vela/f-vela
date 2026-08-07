@@ -15,7 +15,7 @@ int main(void)
     printf("Starting RoPE Test...\n");
 
     /*
-     * 주소는 x3(gp)를 변경하기 전에 일반 레지스터에 배치된다.
+     * 주소는 x3(gp)를 변경하기 전에 일반 레지스터에 배치.
      *
      * t4 : 기존 gp 보관
      * t5 : m
