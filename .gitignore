@@ -12,13 +12,13 @@ _link/*
 issue/
 
 # Generated files
-*.log
-*.rpt
 bin/
 tmp/
+wave/
+*.log
+*.rpt
 *.tmp
 *.Identifier
-
 *.ld
 
 # Documentation files
