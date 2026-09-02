@@ -206,19 +206,19 @@ lazy val chipyard = {
 	//   (ara / mempress / aes / compress-acc). Excluding them lets those generators stay
 	//   commented-out in optionalModules above -> much faster build. Small cores that DigitalTop/
 	//   TileFragments reference (nvdla, fft-generator, cva6, ibex, sodor, vexiiriscv) are kept.
-	val fvelaExcludeSettings: Seq[Def.Setting[_]] = Seq(
-	Compile / unmanagedSources := {
-		val files = (Compile / unmanagedSources).value
-		val root = (ThisBuild / baseDirectory).value
-		val excludeList = Seq(
-			"generators/chipyard/src/main/scala/config/AraConfigs.scala",
-			"generators/chipyard/src/main/scala/config/RoCCAcceleratorConfigs.scala",
-			"generators/chipyard/src/main/scala/config/SaturnConfigs.scala",
-			"generators/chipyard/src/main/scala/config/ShuttleConfigs.scala"
-		).map(p => (root / p).getCanonicalFile)
-		files.filterNot(f => excludeList.contains(f.getCanonicalFile))
-	}
-	)
+	// val fvelaExcludeSettings: Seq[Def.Setting[_]] = Seq(
+	// Compile / unmanagedSources := {
+	// 	val files = (Compile / unmanagedSources).value
+	// 	val root = (ThisBuild / baseDirectory).value
+	// 	val excludeList = Seq(
+	// 		"generators/chipyard/src/main/scala/config/AraConfigs.scala",
+	// 		"generators/chipyard/src/main/scala/config/RoCCAcceleratorConfigs.scala",
+	// 		"generators/chipyard/src/main/scala/config/SaturnConfigs.scala",
+	// 		"generators/chipyard/src/main/scala/config/ShuttleConfigs.scala"
+	// 	).map(p => (root / p).getCanonicalFile)
+	// 	files.filterNot(f => excludeList.contains(f.getCanonicalFile))
+	// }
+	// )
 
 	var cy = Project(id = "chipyard", base = file("generators/chipyard"))
 		.dependsOn(baseDeps: _*)
@@ -234,7 +234,7 @@ lazy val chipyard = {
 		else file("tools/stage/src/main/scala")
 	})
 	.settings(dspExcludeSettings: _*)
-	.settings(fvelaExcludeSettings: _*)
+	// .settings(fvelaExcludeSettings: _*)
 
 	// Optional modules discovered via initialized submodules (no env or manifest)
 	val optionalModules: Seq[(String, ProjectReference)] = Seq(
@@ -559,7 +559,7 @@ lazy val firechip = (project in file("generators/firechip/chip"))
 // Example of how to add a new generator project:
 //lazy val yourproject = (project in file("generators/yourproject")).settings(commonSettings).dependsOn(rocketchip)
 lazy val f_vela = (project in file("generators/_f_vela"))
-	.dependsOn(rocketchip, shuttle) //f_vela_saturn, f_vela_gemmini 로 나눠서 의존성 추가하는 것도 고려해볼 수 있음..
+	.dependsOn(rocketchip, shuttle) //vela_vpu, vela_npu 로 나눠서 의존성 추가하는 것도 고려해볼 수 있음..
 	.settings(
 		commonSettings,
 		libraryDependencies ++= rocketLibDeps.value,

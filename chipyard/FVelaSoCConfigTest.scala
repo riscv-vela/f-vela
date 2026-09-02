@@ -2,12 +2,12 @@ package chipyard
 import org.chipsalliance.cde.config.Config
 
 import freechips.rocketchip.rocket._
-import f_vela_saturn.common.{VectorParams}
-import f_vela_gemmini._
+import vela_vpu.common.{VectorParams}
+import vela_npu._
 
 class FVelaSoCConfigTest extends Config(
-    new f_vela_saturn.rocket.WithRocketVectorUnit(512, 256, f_vela_saturn.common.VectorParams.refParams) ++ //vlen minimum 512, dlen minimum 256 (PID needs egsPerVReg=2 -> vLen=2*dLen)
-    new f_vela_gemmini.GemminiCustomConfig() ++ 
+    new vela_vpu.rocket.WithRocketVectorUnit(512, 256, vela_vpu.common.VectorParams.refParams) ++ //vlen minimum 512, dlen minimum 256 (PID needs egsPerVReg=2 -> vLen=2*dLen)
+    new vela_npu.GemminiCustomConfig() ++ 
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     // new shuttle.common.WithNShuttleCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
@@ -15,17 +15,17 @@ class FVelaSoCConfigTest extends Config(
 )
 
 class FVelaGemminiOnlyConfig extends Config(
-    new f_vela_gemmini.GemminiCustomConfig() ++
+    new vela_npu.GemminiCustomConfig() ++
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
     new chipyard.config.AbstractConfig
 )
 
 class FVelaSaturnOnlyConfig extends Config(
-    new f_vela_saturn.rocket.WithRocketVectorUnit(
+    new vela_vpu.rocket.WithRocketVectorUnit(
         512,
         256,
-        f_vela_saturn.common.VectorParams.refParams
+        vela_vpu.common.VectorParams.refParams
     ) ++
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
@@ -33,16 +33,15 @@ class FVelaSaturnOnlyConfig extends Config(
 )
 
 class FVelaSaturnMinConfig extends Config(
-    new f_vela_saturn.rocket.WithRocketVectorUnit(
+    new vela_vpu.rocket.WithRocketVectorUnit(
         512,
         128,
-        f_vela_saturn.common.VectorParams.minParams
+        vela_vpu.common.VectorParams.minParams
     ) ++
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
     new chipyard.config.AbstractConfig
 )
-
 
 // legacy verilator version
 // class SaturnGemminiConfig extends Config(
