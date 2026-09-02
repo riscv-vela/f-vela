@@ -3,10 +3,10 @@ import org.chipsalliance.cde.config.Config
 
 import freechips.rocketchip.rocket._
 import f_vela_saturn.common.{VectorParams}
-import f_vela_gemmini._ 
+import f_vela_gemmini._
 
 class FVelaSoCConfigTest extends Config(
-    new f_vela_saturn.rocket.WithRocketVectorUnit(512, 256, VectorParams.refParams) ++ //vlen minimum 512, dlen minimum 256 (PID needs egsPerVReg=2 -> vLen=2*dLen)
+    new f_vela_saturn.rocket.WithRocketVectorUnit(512, 256, f_vela_saturn.common.VectorParams.refParams) ++ //vlen minimum 512, dlen minimum 256 (PID needs egsPerVReg=2 -> vLen=2*dLen)
     new f_vela_gemmini.GemminiCustomConfig() ++ 
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     // new shuttle.common.WithNShuttleCores(1) ++
@@ -25,7 +25,7 @@ class FVelaSaturnOnlyConfig extends Config(
     new f_vela_saturn.rocket.WithRocketVectorUnit(
         512,
         256,
-        VectorParams.refParams
+        f_vela_saturn.common.VectorParams.refParams
     ) ++
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
@@ -36,7 +36,7 @@ class FVelaSaturnMinConfig extends Config(
     new f_vela_saturn.rocket.WithRocketVectorUnit(
         512,
         128,
-        VectorParams.minParams
+        f_vela_saturn.common.VectorParams.minParams
     ) ++
     new freechips.rocketchip.rocket.WithNHugeCores(1) ++
     new chipyard.config.WithSystemBusWidth(128) ++
@@ -44,7 +44,7 @@ class FVelaSaturnMinConfig extends Config(
 )
 
 
-// legacy verilator version 
+// legacy verilator version
 // class SaturnGemminiConfig extends Config(
 //     new gemmini.DefaultGemminiConfig ++                            // use Gemmini systolic array GEMM accelerator
 //     new saturn.rocket.WithRocketVectorUnit(256, 128, VectorParams.refParams) ++

@@ -21,6 +21,8 @@
 #     -c, --max-cycles N   +max-cycles value (default: 100000000).
 #     -v, --verbose        pass +verbose to the simulator (default: off).
 #         --no-verbose     do not pass +verbose (explicit; this is the default).
+#     -a, --dasm           pipe the commit trace through spike-dasm so inst=[hex] DASM(hex)
+#                          becomes real assembly (e.g. "c.sd a5, 0(a4)"). Implies -v.
 #     -w, --wave           dump a waveform. Uses the debug (trace-enabled) simulator binary
 #                          (build it first with 'verilator_make.sh -d'), i.e. "<sim>-debug".
 #                          Waveform is written next to the log as <program>.vcd (or .fst).
@@ -38,6 +40,7 @@
 #     ./run_sim.sh gemmini gemm -w         # run + dump waveform (gemm.vcd)
 #     ./run_sim.sh gemmini gemm -w --fst   # run + dump waveform in FST format (gemm.fst)
 #     ./run_sim.sh gemmini gemm -g         # run + dump waveform + open it in gtkwave
+#     ./run_sim.sh gemmini gemm -a         # run with verbose commit trace disassembled
 ########################################################################################################################
 
 set -o pipefail
@@ -56,9 +59,10 @@ VERBOSE=false
 DUMP_WAVE=false
 USE_FST=false
 OPEN_GTKWAVE=false
+DASM=false
 
 usage() {
-    sed -n '4,40p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\}//'
+    sed -n '4,43p' "${BASH_SOURCE[0]}" | sed 's/^#\{0,1\}//'
 }
 
 # --- positional: test type --------------------------------------------------------------------------------------------
@@ -70,6 +74,7 @@ case "$TEST_TYPE" in
     rope)    BUILD_DIR="$SOFTWARE_DIR/test/rv_rope_test/build";    DEFAULT_PROG="vfrope_test"  ;;
     profiler) BUILD_DIR="$SOFTWARE_DIR/test/profiler_test/build"; DEFAULT_PROG="vfprofiler_test"  ;;
     integ) BUILD_DIR="$SOFTWARE_DIR/test/integ_test/build"; DEFAULT_PROG="vfinteg_test"  ;;
+    conv) BUILD_DIR="$SOFTWARE_DIR/test/cmp_conv_cycle/build"; DEFAULT_PROG="custom_gemmini_mpgemm_profiler"  ;;
     -h|--help|"") usage; exit 0 ;;
     *)
         echo "Unknown test type: '$TEST_TYPE' (expected gemmini | pid | rope | profiler | integ)"
@@ -93,6 +98,7 @@ while [[ $# -gt 0 ]]; do
         -l|--list)       DO_LIST=true;    shift ;;
         -v|--verbose)    VERBOSE=true;    shift ;;
         --no-verbose)    VERBOSE=false;   shift ;;
+        -a|--dasm)       DASM=true; VERBOSE=true; shift ;;
         -w|--wave)       DUMP_WAVE=true;  shift ;;
         --fst)           DUMP_WAVE=true;  USE_FST=true; shift ;;
         -g|--gtkwave)    DUMP_WAVE=true;  OPEN_GTKWAVE=true; shift ;;
@@ -176,6 +182,7 @@ echo "  Test type: $TEST_TYPE"
 echo "  Simulator: $SIMULATOR"
 echo "  Binary:    $ELF_NAME"
 echo "  Verbose:   $VERBOSE"
+$DASM && echo "  Disasm:    on (commit trace piped through spike-dasm)"
 echo "  Log:       $LOG_FILE"
 $DUMP_WAVE && echo "  Waveform:  $WAVE_FILE"
 echo "=============================================="
@@ -202,10 +209,22 @@ SIM_ARGS+=( +max-cycles="$MAX_CYCLES" +permissive-off )
 #     "$ELF_FILE" \
 #     2>&1 | tee "$LOG_FILE"
 
-"$SIM_PATH" \
-    "${SIM_ARGS[@]}" \
-    "$ELF_FILE" \
-    2>&1 | tee "$LOG_FILE"
+if $DASM && ! command -v spike-dasm >/dev/null 2>&1; then
+    echo "  Warning: spike-dasm not found in PATH; showing raw inst=[hex] DASM(hex) instead."
+    DASM=false
+fi
+
+if $DASM; then
+    "$SIM_PATH" \
+        "${SIM_ARGS[@]}" \
+        "$ELF_FILE" \
+        2>&1 | spike-dasm | tee "$LOG_FILE"
+else
+    "$SIM_PATH" \
+        "${SIM_ARGS[@]}" \
+        "$ELF_FILE" \
+        2>&1 | tee "$LOG_FILE"
+fi
 STATUS=${PIPESTATUS[0]}
 
 if [ $STATUS -eq 0 ]; then

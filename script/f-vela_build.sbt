@@ -243,15 +243,15 @@ lazy val chipyard = {
 		"ibex" -> ibex,
 		"vexiiriscv" -> vexiiriscv,
 		"riscv-sodor" -> sodor,
-		// "ara" -> ara,
-		// "saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
-		// "tacit" -> tacit,
-		// "gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
+		"ara" -> ara,
+		"saturn" -> saturn,   // dependency => rocketchip, shuttle(=> ref: ara, tecic, rerocc )
+		"tacit" -> tacit,
+		"gemmini" -> gemmini, // dependency => rocketchip, radiance(ref)
 		"nvdla" -> nvdla,
-		// "radiance" -> radiance,
-		// "caliptra-aes-acc" -> caliptra_aes,
-		// "compress-acc" -> compressacc,
-		// "mempress" -> mempress,
+		"radiance" -> radiance,
+		"caliptra-aes-acc" -> caliptra_aes,
+		"compress-acc" -> compressacc,
+		"mempress" -> mempress,
 		"fft-generator" -> fft_generator,
 		"_f_vela" -> f_vela, // submodule 로 추가, git submodule update --init generators/_f_vela 로 초기화 필요
 	)

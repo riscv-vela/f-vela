@@ -4,19 +4,20 @@
 #   Builds the gemmini, pid, rope, profiler and integ_test test folders by delegating to each folder's own Makefile.
 #
 #   usage:
-#     make            # build all (gemmini + pid + rope + profiler + integ), bare-metal
+#     make            # build all (gemmini + pid + rope + profiler + integ + cmp), bare-metal
 #     make gemmini    # build only rv_gemmini_test
 #     make pid        # build only rv_pid_test
 #     make rope       # build only rv_rope_test
 #     make profiler   # build only profiler_test
 #     make integ      # build only integ_test (combined single-thread menu + multi-thread tests)
+#     make cmp        # build only cmp_conv_cycle (Rocket CPU vs vanilla vs custom Gemmini conv)
 #     make linux      # build the Linux (firemarshal/busybox) userspace variants of all tests
 #     make clean      # clean all
 ########################################################################################################################
 
-.PHONY: all gemmini pid rope profiler integ linux clean
+.PHONY: all gemmini pid rope profiler integ cmp linux clean
 
-all: gemmini pid rope profiler integ
+all: gemmini pid rope profiler integ cmp
 
 gemmini:
 	$(MAKE) -C rv_gemmini_test
@@ -33,12 +34,16 @@ profiler:
 integ:
 	$(MAKE) -C integ_test
 
+cmp:
+	$(MAKE) -C cmp_conv_cycle
+
 linux:
 	$(MAKE) -C rv_gemmini_test linux
 	$(MAKE) -C rv_pid_test     linux
 	$(MAKE) -C rv_rope_test    linux
 	$(MAKE) -C profiler_test   linux
 	$(MAKE) -C integ_test      linux
+	$(MAKE) -C cmp_conv_cycle  linux
 
 clean:
 	$(MAKE) -C rv_gemmini_test clean
@@ -46,3 +51,4 @@ clean:
 	$(MAKE) -C rv_rope_test    clean
 	$(MAKE) -C profiler_test   clean
 	$(MAKE) -C integ_test      clean
+	$(MAKE) -C cmp_conv_cycle  clean
