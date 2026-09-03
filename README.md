@@ -364,7 +364,18 @@ Typical flow:
 
 ---
 
-## Contributing and Contact
+## Maintenance and Acknowledgments
+
+**f-vela** is primarily developed and maintained by the **Embedded Systems and Computer Architecture Laboratory (ESCA) at Korea University**.
+The profiler component of f-vela was contributed by **ASO at Yonsei University**.
+
+For more information on the research related to f-vela, please refer to:
+
+- [Three Birds, One Stone: Fast, Accurate-aware and Cost-Efficient Accelerator for Ternary LLM](https://doi.org/10.1145/3797905.3807877)
+
+If you publish research using or building upon f-vela, please acknowledge the **f-vela project** in your publication.
+
+## Contributions
 
 Contributions to **f-vela** are always welcome.
 
@@ -378,10 +389,10 @@ Contributions to **f-vela** are always welcome.
 
 ### Contact
 
-If you have questions about using the NPU/VPU, building software,  
-or running on FPGA/FireSim, feel free to contact:
+If you have questions about using the vela NPU/VPU, building software, or running on FPGA/FireSim, feel free to contact:
 
-**bgiant6097@gmail.com**
+- Current maintainer: **woojean292@gmail.com**
+- Previous maintainer: **bgiant6097@gmail.com**
 
 We encourage users to open GitHub Issues first so discussions remain visible to the community.
 
