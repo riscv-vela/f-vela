@@ -388,7 +388,14 @@ Contributions to **f-vela** are always welcome.
 - When submitting a Pull Request, reference any related issues
   (e.g., `Closes #5`).
 
-### Contact
+### Institutional Contributions
+- **Korea University ESCA Laboratory**
+  - Primary development and maintenance of the f-vela project(velaNPU / velaVPU)
+
+- **Yonsei University**
+  - Contribution to the profiler component
+
+## Contact
 
 If you have questions about using the vela NPU/VPU, building software, or running on FPGA/FireSim, feel free to contact:
 
