@@ -389,7 +389,7 @@ Contributions to **f-vela** are always welcome.
   (e.g., `Closes #5`).
 
 ### Institutional Contributions
-- **Korea University ESCA Laboratory**
+- **Korea University**
   - Primary development and maintenance of the f-vela project(velaNPU / velaVPU)
 
 - **Yonsei University**
@@ -399,8 +399,8 @@ Contributions to **f-vela** are always welcome.
 
 If you have questions about using the vela NPU/VPU, building software, or running on FPGA/FireSim, feel free to contact:
 
-- Current maintainer: **woojean292@gmail.com**
-- Previous maintainer: **bgiant6097@gmail.com**
+- **woojean292@gmail.com**
+- **bgiant6097@gmail.com**
 
 We encourage users to open GitHub Issues first so discussions remain visible to the community.
 
