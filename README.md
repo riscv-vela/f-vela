@@ -381,10 +381,8 @@ Contributions to **f-vela** are always welcome.
 
 ### How to Contribute
 
-- If you find a bug, have a feature request, or need documentation updates,  
-  **please open an Issue** in this repository.
-- For code contributions (RTL, software tests, scripts, documentation, etc.),  
-  **please submit a Pull Request**.
+- If you find a bug, have a feature request, or need documentation updates, **please open an Issue** in this repository.
+- For code contributions (RTL, software tests, scripts, documentation, etc.), **please submit a Pull Request**.
 - When submitting a pull request, reference related issues (e.g., `Closes #5 #8 #9`).
 
 ### Contact
