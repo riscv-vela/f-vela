@@ -8,30 +8,12 @@ import gemmini.Util._
 class MpExeUnit[T <: Data](
   inputType: T, weightType: T, outputType: T,
   ma_length: Int, ma_num: Int, max_simultaneous_matmuls: Int
-)(implicit ev: Arithmetic[T]) extends Module {
+)(implicit ev: Arithmetic[T]) extends Module with HasExeUnitIO[T] {
   import ev._
 
-  val io = IO(new Bundle {
-    val in_a = Input(Vec(ma_length, inputType))
-    val in_b = Input(Vec(ma_num, weightType))   // 그대로 유지 (int2 Vec)
-    val in_d = Input(Vec(ma_num, inputType))
-
-    val in_last = Input(Vec(ma_length, Bool()))
-    val in_prop = Input(Vec(ma_length, Bool()))
-    val in_valid = Input(Vec(ma_length, Bool()))
-    val in_id = Input(Vec(ma_length, UInt(log2Up(max_simultaneous_matmuls).W)))
-    val in_fire_counter = Input(UInt(log2Up(ma_length).W))
-    val in_b_transpose = Input(Bool())
-
-    // 추가
-    val in_is_mpgemm = Input(Bool())
-    val out_is_mpgemm = Output(Bool())
-
-    val out_c = Output(Vec(ma_num, outputType))
-    val out_last = Output(Vec(ma_num, Bool()))
-    val out_id = Output(Vec(ma_num, UInt(log2Up(max_simultaneous_matmuls).W)))
-    val out_valid = Output(Vec(ma_num, Bool()))
-  })
+  // IO is the shared ExeUnitIO (extracted; field set unchanged from the
+  // original inline bundle) so FpExeUnit can be a drop-in alternative.
+  val io = IO(new ExeUnitIO(inputType, weightType, outputType, ma_length, ma_num, max_simultaneous_matmuls))
 
   val buffadderarray = Seq.fill(ma_num) {
     Module { new Buffadderlight(inputType, outputType, max_simultaneous_matmuls) }

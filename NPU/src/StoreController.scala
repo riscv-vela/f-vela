@@ -58,6 +58,10 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   val row_counter = RegInit(0.U(12.W)) // TODO magic number
   val block_counter = RegInit(0.U(8.W)) // TODO magic number
 
+  // fp32 output / fp16 matmul (CONFIG_ST bits 12/13)
+  val output_as_float = RegInit(false.B)
+  val is_fp_out = RegInit(false.B)   // acc is fp32 (raw, fp16 matmul) vs int32
+
   // Pooling variables
   val pool_stride = Reg(UInt(CONFIG_MVOUT_RS1_MAX_POOLING_STRIDE_WIDTH.W)) // When this is 0, pooling is disabled
   val pool_size = Reg(UInt(CONFIG_MVOUT_RS1_MAX_POOLING_WINDOW_SIZE_WIDTH.W))
@@ -99,6 +103,8 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   val config_cmd_type = config_mvout_rs1.cmd_type
   val config_stride = config_mvout_rs2.stride
   val config_activation = config_mvout_rs1.activation
+  val config_output_as_float = config_mvout_rs1.output_as_float
+  val config_is_fp = config_mvout_rs1.is_fp
   val config_acc_scale = config_mvout_rs2.acc_scale
   val config_pool_stride = config_mvout_rs1.pool_stride
   val config_pool_size = config_mvout_rs1.pool_size
@@ -183,6 +189,8 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
   io.dma.req.bits.rob_id := cmd.bits.rob_id.bits
   io.dma.req.bits.profile_id := Mux(control_state === waiting_for_command, next_store_profile_id, active_store_profile_id)
   io.dma.req.bits.status := mstatus
+  io.dma.req.bits.output_as_float := output_as_float
+  io.dma.req.bits.is_fp := is_fp_out
   io.dma.req.bits.pool_en := pooling_is_enabled && (wrow_counter =/= 0.U || wcol_counter =/= 0.U)
   io.dma.req.bits.store_en := Mux(pooling_is_enabled, wrow_counter === pool_size - 1.U && wcol_counter === pool_size - 1.U,
     block_counter === blocks - 1.U)
@@ -246,6 +254,8 @@ class StoreController[T <: Data : Arithmetic, U <: Data, V <: Data](config: Gemm
           stride := config_stride
 
           activation := config_activation
+          output_as_float := config_output_as_float.asBool
+          is_fp_out := config_is_fp.asBool
           when (!config_acc_scale.asUInt.andR) {
             acc_scale := config_acc_scale.asTypeOf(acc_scale_t)
           }

@@ -64,6 +64,7 @@ tests = \
 	gemv_single \
 	gemv_double \
 	gemm \
+	fp16_matmul \
 
 
 tests_baremetal = $(tests:=-baremetal)

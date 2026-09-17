@@ -144,6 +144,7 @@ class LoopConvLdBias(block_size: Int, coreMaxAddrBits: Int, large_iterator_bitwi
 
   val config_cmd_rs1 = Wire(config_mvin_rs1_t.cloneType)
   config_cmd_rs1 := DontCare
+  config_cmd_rs1.is_fp := 0.U   // fp16 matmul: conv never enters fp mode
   config_cmd_rs1.scale := MVIN_SCALE_IDENTITY
   config_cmd_rs1.stride := req.derived_params.bias_spad_stride
   config_cmd_rs1.pixel_repeats := 1.U
@@ -318,6 +319,7 @@ class LoopConvLdInput(block_size: Int, coreMaxAddrBits: Int, large_iterator_bitw
 
   val config_cmd_rs1 = Wire(config_mvin_rs1_t.cloneType)
   config_cmd_rs1 := DontCare
+  config_cmd_rs1.is_fp := 0.U   // fp16 matmul: conv never enters fp mode
   config_cmd_rs1.scale := MVIN_SCALE_IDENTITY
   config_cmd_rs1.stride := input_spad_stride
   config_cmd_rs1.pixel_repeats := req.max_pixels_per_row
@@ -499,6 +501,7 @@ class LoopConvLdWeight(block_size: Int, coreMaxAddrBits: Int, large_iterator_bit
 
   val config_cmd_rs1 = Wire(config_mvin_rs1_t.cloneType)
   config_cmd_rs1 := DontCare
+  config_cmd_rs1.is_fp := 0.U   // fp16 matmul: conv never enters fp mode
   config_cmd_rs1.scale := MVIN_SCALE_IDENTITY
   config_cmd_rs1.stride := req.derived_params.weight_spad_stride
   config_cmd_rs1.pixel_repeats := 1.U
@@ -697,6 +700,7 @@ class LoopConvExecute(block_size: Int, large_iterator_bitwidth: Int, small_itera
 
   val config_cmd_rs1 = Wire(config_ex_rs1_t.cloneType)
   config_cmd_rs1 := DontCare
+  config_cmd_rs1.is_fp := 0.U   // fp16 matmul: conv never enters fp mode
   config_cmd_rs1.a_stride := (irows * icols).asUInt
   config_cmd_rs1.set_only_strides := 1.U
   config_cmd_rs1.cmd_type := 0.U
@@ -927,6 +931,8 @@ class LoopConvSt(block_size: Int, coreMaxAddrBits: Int, large_iterator_bitwidth:
   pre_pool_config_cmd.inst.funct := CONFIG_CMD
   val pre_pool_config_cmd_rs1 = Wire(new ConfigMvoutRs1)
   pre_pool_config_cmd_rs1 := DontCare
+  pre_pool_config_cmd_rs1.is_fp := 0.U
+  pre_pool_config_cmd_rs1.output_as_float := 0.U
   pre_pool_config_cmd_rs1.ocols := ocols
   pre_pool_config_cmd_rs1.orows := orows
   pre_pool_config_cmd_rs1.pocols := pocols
@@ -952,6 +958,8 @@ class LoopConvSt(block_size: Int, coreMaxAddrBits: Int, large_iterator_bitwidth:
 
   val post_pool_config_cmd_rs1 = Wire(new ConfigMvoutRs1)
   post_pool_config_cmd_rs1 := DontCare
+  post_pool_config_cmd_rs1.is_fp := 0.U
+  post_pool_config_cmd_rs1.output_as_float := 0.U
   post_pool_config_cmd_rs1.activation := req.activation
   post_pool_config_cmd_rs1.cmd_type := CONFIG_STORE
   post_pool_config_cmd.rs1 := post_pool_config_cmd_rs1.asUInt

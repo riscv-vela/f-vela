@@ -4,6 +4,7 @@ package gemmini
 import chisel3._
 import chisel3.util._
 import Util._
+import hardfloat._
 
 class AccumulatorReadRespWithFullData[T <: Data: Arithmetic, U <: Data](fullDataType: Vec[Vec[T]], scale_t: U)
   extends Bundle {
@@ -23,6 +24,9 @@ class AccumulatorScaleIO[T <: Data: Arithmetic, U <: Data](
   rDataType: Vec[Vec[T]]
 ) extends Bundle {
   val in = Flipped(Decoupled(new NormalizedOutput[T,U](fullDataType, scale_t)))
+  // Sampled when `in` fires (the scale step is combinational in front of the pipeline).
+  val output_as_float = Input(Bool())   // full_data = scaled fp32 bits instead of saturated int
+  val is_fp = Input(Bool())             // acc cell holds raw fp32 (fp16 matmul) instead of int32
   val out = Decoupled(new AccumulatorScaleResp[T](fullDataType, rDataType))
 }
 
@@ -92,9 +96,20 @@ class AccumulatorScale[T <: Data, U <: Data](
   scale_func: (T, U) => T,
   num_scale_units: Int,
   latency: Int,
-  has_nonlinear_activations: Boolean, has_normalizations: Boolean)(implicit ev: Arithmetic[T]) extends Module {
+  has_nonlinear_activations: Boolean, has_normalizations: Boolean,
+  support_fp: Boolean = false)(implicit ev: Arithmetic[T]) extends Module {
 
   import ev._
+
+  // fp16 matmul / fp32 output: the acc cell is 32b and the scale is fp32, so the
+  // int/fp choice can be made at runtime around one shared float multiplier.
+  val scaleExpW = 8
+  val scaleSigW = 24
+  if (support_fp) {
+    require(num_scale_units == -1, "support_fp requires the inline acc scale path (num_scale_units = -1)")
+    require(fullDataType.head.head.getWidth == scaleExpW + scaleSigW, "support_fp requires a 32-bit accumulator cell")
+    require(scale_t.getWidth == scaleExpW + scaleSigW, "support_fp requires an fp32 acc scale")
+  }
 
   val io = IO(new AccumulatorScaleIO[T,U](
     fullDataType, scale_t, rDataType
@@ -124,19 +139,57 @@ class AccumulatorScale[T <: Data, U <: Data](
           AccumulatorScale.iexp(e - io.in.bits.max, iexp_qln2, iexp_qln2_inv, igelu_qb, igelu_qc),
       ))
 
-      val e_scaled = scale_func(e_act, MuxCase(scale, Seq(
+      val e_scale = MuxCase(scale, Seq(
         (has_nonlinear_activations.B && has_normalizations.B && act === Activation.LAYERNORM) ->
           io.in.bits.inv_stddev,
         (has_nonlinear_activations.B && has_normalizations.B && act === Activation.SOFTMAX) ->
           io.in.bits.inv_sum_exp.asTypeOf(scale_t)
-      )).asTypeOf(scale_t))
+      )).asTypeOf(scale_t)
 
-      // val e_clipped = e_scaled.clippedToWidthOf(rDataType.head.head)
+      if (!support_fp) {
+        scale_func(e_act, e_scale)
+      } else {
+        // Same math as the default acc_scale_func (int32 -> fp32 * scale -> saturated int),
+        // but the recode of the acc cell is picked at runtime: an fp16 matmul leaves raw
+        // fp32 bits in the SInt(32) cell, which INToRecFN would misread as an integer.
+        val e_bits = e_act.asTypeOf(UInt(e_act.getWidth.W))
 
-      // e_clipped
-      e_scaled
+        val in_to_rec_fn = Module(new INToRecFN(e_act.getWidth, scaleExpW, scaleSigW))
+        in_to_rec_fn.io.signedIn := true.B
+        in_to_rec_fn.io.in := e_bits
+        in_to_rec_fn.io.roundingMode := consts.round_near_even
+        in_to_rec_fn.io.detectTininess := consts.tininess_afterRounding
+
+        val rec_in = Mux(io.is_fp, recFNFromFN(scaleExpW, scaleSigW, e_bits), in_to_rec_fn.io.out)
+
+        val muladder = Module(new MulAddRecFN(scaleExpW, scaleSigW))
+        muladder.io.op := 0.U
+        muladder.io.roundingMode := consts.round_near_even
+        muladder.io.detectTininess := consts.tininess_afterRounding
+        muladder.io.a := rec_in
+        muladder.io.b := recFNFromFN(scaleExpW, scaleSigW, e_scale.asTypeOf(UInt(scale_t.getWidth.W)))
+        muladder.io.c := 0.U
+
+        val rec_fn_to_in = Module(new RecFNToIN(scaleExpW, scaleSigW, e_act.getWidth))
+        rec_fn_to_in.io.in := muladder.io.out
+        rec_fn_to_in.io.roundingMode := consts.round_near_even
+        rec_fn_to_in.io.signedOut := true.B
+
+        val overflow = rec_fn_to_in.io.intExceptionFlags(1)
+        val maxsat = ((BigInt(1) << (e_act.getWidth - 1)) - 1).S(e_act.getWidth.W)
+        val minsat = (-(BigInt(1) << (e_act.getWidth - 1))).S(e_act.getWidth.W)
+        val sign = rawFloatFromRecFN(scaleExpW, scaleSigW, muladder.io.out).sign
+        val sat = Mux(sign, minsat, maxsat)
+
+        val scaled_int = Mux(overflow, sat, rec_fn_to_in.io.out.asSInt).asTypeOf(e_act)
+        val scaled_float_bits = fNFromRecFN(scaleExpW, scaleSigW, muladder.io.out).asTypeOf(e_act)
+
+        Mux(io.output_as_float, scaled_float_bits, scaled_int)
+      }
     })))
 
+    // With support_fp, full_data may hold fp32 bits (output_as_float). The int8 path is only
+    // consumed when output_as_float is off, where activated_data is the saturated int.
     val clipped_data = VecInit(activated_data.map(v => VecInit(v.map { e_scaled =>
       e_scaled.clippedToWidthOf(rDataType.head.head)
     })))
@@ -159,6 +212,7 @@ class AccumulatorScale[T <: Data, U <: Data](
     out.bits.fromDMA   := pipe_out.bits.resp.fromDMA
     out.bits.acc_bank_id := pipe_out.bits.resp.acc_bank_id
   } else {
+    require(!support_fp, "support_fp is only implemented on the inline acc scale path")
     val width = acc_read_data.size * acc_read_data(0).size
     val nEntries = 3
     /*val regs = Reg(Vec(nEntries, Valid(new AccumulatorReadResp[T,U](
