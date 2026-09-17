@@ -2,6 +2,7 @@ package gemmini
 
 import chisel3._
 import chisel3.util._
+import hardfloat._
 
 import Util._
 
@@ -41,6 +42,10 @@ class AccumulatorWriteReq[T <: Data: Arithmetic](n: Int, t: Vec[Vec[T]]) extends
   val data = t.cloneType
   val acc = Bool()
   val mask = Vec(t.getWidth / 8, Bool()) // TODO Use aligned_to here
+  // fp16 matmul: when set, this accumulate is an fp32 add (data bits are
+  // Float(8,24)); otherwise the normal int32 add. Defaults false everywhere
+  // except the exe write of fp results, so int8/int2 are unaffected.
+  val is_fp = Bool()
 }
 
 
@@ -54,23 +59,41 @@ class AccumulatorMemIO [T <: Data: Arithmetic, U <: Data](n: Int, t: Vec[Vec[T]]
 
   val adder = new Bundle {
     val valid = Output(Bool())
+    val is_fp = Output(Bool())          // fp16 matmul: route op1/op2 to the fp32 adder
     val op1 = Output(t.cloneType)
     val op2 = Output(t.cloneType)
-    val sum = Input(t.cloneType)
+    val sum = Input(t.cloneType)        // int32 adder result
+    val fp_sum = Input(t.cloneType)     // shared fp32 adder result
   }
 }
 
-class AccPipe[T <: Data : Arithmetic](latency: Int, t: T)(implicit ev: Arithmetic[T]) extends Module {
+class AccPipe[T <: Data : Arithmetic](latency: Int, t: T, fp: Boolean = false)(implicit ev: Arithmetic[T]) extends Module {
   val io = IO(new Bundle {
     val op1 = Input(t.cloneType)
     val op2 = Input(t.cloneType)
     val sum = Output(t.cloneType)
   })
   import ev._
-  io.sum := ShiftRegister(io.op1 + io.op2, latency)
+  // fp16 matmul: `fp` forces an fp32 add even though T is the int acc cell
+  // (SInt(32)). The 32-bit element bits are reinterpreted as Float(8,24), summed
+  // with AddRecFN, and written back as raw bits. Only used by the shared fp acc
+  // adder; the int path (fp=false) is unchanged.
+  if (fp) {
+    require(t.getWidth == 32, "fp acc adder requires a 32-bit accumulator cell (Float(8,24))")
+    val ew = 8; val sw = 24
+    val add = Module(new AddRecFN(ew, sw))
+    add.io.subOp          := false.B
+    add.io.a              := recFNFromFN(ew, sw, io.op1.asUInt)
+    add.io.b              := recFNFromFN(ew, sw, io.op2.asUInt)
+    add.io.roundingMode   := consts.round_near_even
+    add.io.detectTininess := consts.tininess_afterRounding
+    io.sum := ShiftRegister(fNFromRecFN(ew, sw, add.io.out).asTypeOf(t), latency)
+  } else {
+    io.sum := ShiftRegister(io.op1 + io.op2, latency)
+  }
 }
 
-class AccPipeShared[T <: Data : Arithmetic](latency: Int, t: Vec[Vec[T]], banks: Int) extends Module {
+class AccPipeShared[T <: Data : Arithmetic](latency: Int, t: Vec[Vec[T]], banks: Int, fp: Boolean = false) extends Module {
   val io = IO(new Bundle {
     val in_sel = Input(Vec(banks, Bool()))
     val ina = Input(Vec(banks, t.cloneType))
@@ -81,7 +104,7 @@ class AccPipeShared[T <: Data : Arithmetic](latency: Int, t: Vec[Vec[T]], banks:
   val inb = Mux1H(io.in_sel, io.inb)
   io.out := VecInit((ina zip inb).map { case (rv, wv) =>
     VecInit((rv zip wv).map { case (re, we) =>
-      val m = Module(new AccPipe(latency, t.head.head.cloneType))
+      val m = Module(new AccPipe(latency, t.head.head.cloneType, fp))
       m.io.op1 := re
       m.io.op2 := we
       m.io.sum
@@ -123,8 +146,12 @@ class AccumulatorMem[T <: Data, U <: Data](
   val rdata_for_read_resp = Wire(t)
   rdata_for_read_resp := DontCare
 
-  val adder_sum = io.adder.sum
+  // fp16 matmul: pick the fp32 adder result when this (oldest) write was an fp
+  // accumulate, otherwise the int32 result. is_fp is aligned because both io.adder
+  // results are registered by acc_latency-1, same as oldest_pipelined_write.
+  val adder_sum = Mux(oldest_pipelined_write.bits.is_fp, io.adder.fp_sum, io.adder.sum)
   io.adder.valid := pipelined_writes(0).valid && pipelined_writes(0).bits.acc
+  io.adder.is_fp := pipelined_writes(0).bits.is_fp
   io.adder.op1 := rdata_for_adder
   io.adder.op2 := pipelined_writes(0).bits.data
 

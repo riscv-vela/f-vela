@@ -39,7 +39,13 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   val pixel_repeats = Reg(Vec(load_states, UInt(pixel_repeats_bits.W)))
   val block_rows = meshRows * tileRows
   val block_cols = meshColumns * tileColumns
-  val row_counter = RegInit(0.U(log2Ceil(block_rows).W))
+  // fp16 matmul: per-load-state fp16 flag (set by CONFIG_LD). When set, an mvin
+  // loads fp16 (2-byte) data, splitting each logical DRAM row into 2 spad rows.
+  // Default false so a program that never configures fp behaves as a normal int load.
+  val is_fps = RegInit(VecInit(Seq.fill(load_states)(false.B)))
+  // widened to 2*block_rows: an fp16 load writes 2 spad rows per logical DRAM row,
+  // so the counter must reach 2*block_rows-1 (int loads stay <= block_rows).
+  val row_counter = RegInit(0.U(log2Ceil(2*block_rows).W))
 
   val cmd = Queue(io.cmd, ld_queue_length)
 
@@ -57,6 +63,7 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   val config_shrink = config_mvin_rs1.shrink
   val config_block_stride = config_mvin_rs1.stride
   val config_pixel_repeats = config_mvin_rs1.pixel_repeats
+  val config_is_fp = config_mvin_rs1.is_fp.asBool
 
   val mstatus = cmd.bits.cmd.status
 
@@ -70,12 +77,20 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   val shrink = shrinks(state_id)
   val block_stride = block_strides(state_id)
   val pixel_repeat = pixel_repeats(state_id)
+  val load_is_fp = is_fps(state_id)
 
   val all_zeros = vaddr === 0.U
 
   val localaddr_plus_row_counter = localaddr + row_counter
 
-  val actual_rows_read = Mux(stride === 0.U && !all_zeros, 1.U, rows)
+  // fp16: each logical DRAM row (cols fp16 = 2*cols bytes) becomes 2 spad rows
+  // (cols/8-fp16 lo half, then hi half), so we issue 2x the row requests.
+  val actual_rows_read = Mux(stride === 0.U && !all_zeros, 1.U,
+    Mux(load_is_fp, rows << 1, rows))
+
+  // bytes in one spad row (= cols * inputType bytes; 16 for cols=16 int8). Used to
+  // offset to the hi half of a fp16 logical row on odd row_counter values.
+  val row_bytes = cols * (config.inputType.getWidth / 8).U
 
   val DoConfig = cmd.bits.cmd.inst.funct === CONFIG_CMD
   val DoLoad = !DoConfig // TODO change this if more commands are added
@@ -101,7 +116,12 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
   io.dma.req.valid := (control_state === waiting_for_command && cmd.valid && DoLoad && cmd_tracker.io.alloc.ready) ||
     control_state === waiting_for_dma_req_ready ||
     (control_state === sending_rows && row_counter =/= 0.U)
-  io.dma.req.bits.vaddr := vaddr + row_counter * stride
+  // fp16: row_counter r -> logical DRAM row (r>>1) at +(r>>1)*stride, plus the hi
+  // half (+row_bytes) on odd r. int: linear (r*stride). laddr advances by 1 per
+  // spad row either way, so fp writes 2*rows consecutive spad rows.
+  io.dma.req.bits.vaddr := Mux(load_is_fp,
+    vaddr + (row_counter >> 1) * stride + Mux(row_counter(0), row_bytes, 0.U),
+    vaddr + row_counter * stride)
   io.dma.req.bits.laddr := localaddr_plus_row_counter
   io.dma.req.bits.cols := cols
   io.dma.req.bits.repeats := Mux(stride === 0.U && !all_zeros, rows - 1.U, 0.U)
@@ -148,6 +168,7 @@ class LoadController[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig
           shrink := config_shrink
           block_stride := config_block_stride
           pixel_repeat := Mux(config_pixel_repeats === 0.U, 1.U, config_pixel_repeats) // TODO this default value was just added to maintain backwards compatibility. we should deprecate and remove it later
+          load_is_fp := config_is_fp   // fp16 matmul: fp16 load split flag
           cmd.ready := true.B
         }
 

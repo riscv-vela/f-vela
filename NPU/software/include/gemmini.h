@@ -248,9 +248,16 @@ static acc_scale_t_bits acc_scale_t_to_acc_scale_t_bits(acc_scale_t x) {
 #define gemmini_preload_zeros(C) \
   gemmini_preload(GARBAGE_ADDR, C)
 
+// fp16 matmul: runtime fp mode. When set, the config_ex/st/ld macros and
+// gemmini_loop_ws below carry is_fp (CONFIG_EX bit10, CONFIG_LD bit5, CONFIG_ST
+// bit13, LOOP_WS rs1 bit21) so the stock WS tiling path runs fp16 A/B with an fp32
+// accumulator. Default false => int8/int2 commands are unchanged. Set/cleared by
+// tiled_matmul_auto_fp (gemmini_fp16.h).
+static bool gemmini_is_fp __attribute__((unused)) = false;
+
 // config
 #define gemmini_extended3_config_ex(dataflow, sys_act, sys_shift, sys_acc_scale, C_stride, A_stride, A_transpose, B_transpose, set_only_strides) \
-    ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)acc_scale_t_to_acc_scale_t_bits((acc_scale_t)sys_acc_scale) << 32) | ((uint64_t)(A_stride) << 16) | (B_transpose << 9) | (A_transpose << 8) | ((set_only_strides) << 7) | ((sys_act) << 3) | ((dataflow) << 2) | CONFIG_EX, ((uint64_t)(C_stride) << 48) | (sys_shift), k_CONFIG); \
+    ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)acc_scale_t_to_acc_scale_t_bits((acc_scale_t)sys_acc_scale) << 32) | ((uint64_t)(A_stride) << 16) | ((uint64_t)(gemmini_is_fp & 1) << 10) | (B_transpose << 9) | (A_transpose << 8) | ((set_only_strides) << 7) | ((sys_act) << 3) | ((dataflow) << 2) | CONFIG_EX, ((uint64_t)(C_stride) << 48) | (sys_shift), k_CONFIG); \
 
 #define gemmini_extended2_config_ex(dataflow, sys_act, sys_shift, A_stride, A_transpose, B_transpose) \
   gemmini_extended3_config_ex(dataflow, sys_act, sys_shift, ACC_SCALE_IDENTITY, 1, A_stride, A_transpose, B_transpose, false)
@@ -264,7 +271,7 @@ static acc_scale_t_bits acc_scale_t_to_acc_scale_t_bits(acc_scale_t x) {
 // Note: The "pixel_repeats" parameter below is still experimental, andthere is
 // a high chance that it will be removed in future releases.
 #define gemmini_extended5_config_ld(stride, scale, shrunk, block_mvin_stride, pixel_repeats, id) \
-  ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)(scale_t_to_scale_t_bits(scale)) << 32) | ((uint64_t)(block_mvin_stride) << 16) | ((uint64_t)(pixel_repeats) << 8) | ((id) << 3) | ((shrunk) << 2) | CONFIG_LD, stride, k_CONFIG)
+  ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)(scale_t_to_scale_t_bits(scale)) << 32) | ((uint64_t)(block_mvin_stride) << 16) | ((uint64_t)(pixel_repeats) << 8) | ((uint64_t)(((gemmini_is_fp & 1) && ((id) != 2)) ? 1 : 0) << 5) | ((id) << 3) | ((shrunk) << 2) | CONFIG_LD, stride, k_CONFIG)
 
 #define gemmini_extended4_config_ld(stride, scale, shrunk, block_mvin_stride, id) \
   gemmini_extended5_config_ld(stride, scale, shrunk, block_mvin_stride, 1, id) \
@@ -281,14 +288,21 @@ static acc_scale_t_bits acc_scale_t_to_acc_scale_t_bits(acc_scale_t x) {
 #define gemmini_config_ld(stride) \
   gemmini_extended_config_ld(stride, MVIN_SCALE_IDENTITY)
 
+#define gemmini_extended3_config_st(output_as_float, stride, acc_act, acc_scale, pool_stride, pool_size, pool_out_dim, porows, pocols, orows, ocols, upad, lpad) \
+  ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)(ocols) << 56) | ((uint64_t)(orows) << 48) | ((uint64_t)(pocols) << 40) | ((uint64_t)(porows) << 32) | ((uint64_t)(pool_out_dim) << 24) | ((uint64_t)((output_as_float) & 1) << 12) | ((uint64_t)(gemmini_is_fp & 1) << 13) | ((uint64_t)(lpad) << 10) | ((uint64_t)(upad) << 8) | ((uint64_t)(pool_size) << 6) | ((uint64_t)(pool_stride) << 4) | ((uint64_t)(acc_act) << 2) | CONFIG_ST, ((uint64_t)acc_scale_t_to_acc_scale_t_bits((acc_scale_t)acc_scale) << 32) | ((uint32_t)stride), k_CONFIG)
+
 #define gemmini_extended2_config_st(stride, acc_act, acc_scale, pool_stride, pool_size, pool_out_dim, porows, pocols, orows, ocols, upad, lpad) \
-  ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)(ocols) << 56) | ((uint64_t)(orows) << 48) | ((uint64_t)(pocols) << 40) | ((uint64_t)(porows) << 32) | ((uint64_t)(pool_out_dim) << 24) | ((uint64_t)(lpad) << 10) | ((uint64_t)(upad) << 8) | ((uint64_t)(pool_size) << 6) | ((uint64_t)(pool_stride) << 4) | ((uint64_t)(acc_act) << 2) | CONFIG_ST, ((uint64_t)acc_scale_t_to_acc_scale_t_bits((acc_scale_t)acc_scale) << 32) | ((uint32_t)stride), k_CONFIG)
+  gemmini_extended3_config_st(0, stride, acc_act, acc_scale, pool_stride, pool_size, pool_out_dim, porows, pocols, orows, ocols, upad, lpad)
 
 #define gemmini_extended_config_st(stride, acc_act, acc_scale) \
     gemmini_extended2_config_st(stride, acc_act, acc_scale, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 #define gemmini_config_st(stride) \
     gemmini_extended_config_st(stride, NO_ACTIVATION, ACC_SCALE_IDENTITY)
+
+// output_as_float: C is written as fp32 (4 B/elem, use full_C) instead of saturated int8.
+#define gemmini_extended_config_st_float(output_as_float, stride, acc_act, acc_scale) \
+  gemmini_extended3_config_st(output_as_float, stride, acc_act, acc_scale, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 #define gemmini_config_norm(q_const, q_const_type, set_stats_id_only, act_msb, stat_id, igelu_qb, igelu_qc) \
     ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, (((uint64_t) ((uint32_t) q_const)) << 32) | ((q_const_type & 1) << 18) | ((set_stats_id_only & 1) << 17) | ((act_msb & 1) << 16) | ((uint64_t)stat_id << 8) | CONFIG_BERT, ((uint64_t)((uint32_t)(igelu_qc)) << 32) | ((uint64_t)((uint32_t)(igelu_qb))), k_CONFIG)
@@ -365,7 +379,7 @@ int ceil_divide_int(int a, int b){
     ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, D, C, k_LOOP_WS_CONFIG_ADDRS_DC) \
     ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, A_stride, B_stride, k_LOOP_WS_CONFIG_STRIDES_AB) \
     ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, D_stride, C_stride, k_LOOP_WS_CONFIG_STRIDES_DC) \
-    ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ( is_mpgemm << 20 | (uint64_t)(a_spad_id) << 18) | ((uint64_t)(b_spad_id) << 16) | ((uint64_t)(act) << 8) | ((low_D) << 2) | ((full_C) << 1) | (ex_accumulate), ((is_resadd) << 2) | ((B_transpose) << 1) | (A_transpose), k_LOOP_WS) \
+    ROCC_INSTRUCTION_RS1_RS2(XCUSTOM_ACC, ((uint64_t)(gemmini_is_fp & 1) << 21) | ( is_mpgemm << 20 | (uint64_t)(a_spad_id) << 18) | ((uint64_t)(b_spad_id) << 16) | ((uint64_t)(act) << 8) | ((low_D) << 2) | ((full_C) << 1) | (ex_accumulate), ((is_resadd) << 2) | ((B_transpose) << 1) | (A_transpose), k_LOOP_WS) \
   }
 
 
@@ -554,7 +568,7 @@ static void tiled_matmul_outer(size_t dim_I, size_t dim_J, size_t dim_K,
         bool a_transpose, bool b_transpose,
         bool full_C, bool low_D,
         uint8_t weightA,
-        int dataflow, bool is_mpgemm) {
+        int dataflow, bool is_mpgemm, bool output_as_float) {
 
   const size_t dim_I_padded = (dim_I / DIM + (dim_I % DIM != 0)) * DIM;
   const size_t dim_J_padded = (dim_J / DIM + (dim_J % DIM != 0)) * DIM;
@@ -586,9 +600,9 @@ static void tiled_matmul_outer(size_t dim_I, size_t dim_J, size_t dim_K,
   const size_t sizeof_C = full_C ? sizeof(acc_t) : sizeof(elem_t);
 
   gemmini_extended_config_ex(dataflow, act & 3, 0, 1, a_transpose, b_transpose);
-  gemmini_extended_config_st(stride_C * sizeof_C, act & 3, scale);
-  gemmini_extended3_config_ld(stride_A * sizeof(elem_t), A_scale_factor, false, 0);
-  gemmini_extended3_config_ld(stride_B * sizeof(elem_t), B_scale_factor, false, 1);
+  gemmini_extended_config_st_float(output_as_float, stride_C * sizeof_C, act & 3, scale);
+  gemmini_extended3_config_ld(stride_A * (gemmini_is_fp ? 2 : sizeof(elem_t)), A_scale_factor, false, 0);  // fp16 A: 2 B/elem
+  gemmini_extended3_config_ld(stride_B * (gemmini_is_fp ? 2 : sizeof(elem_t)), B_scale_factor, false, 1);  // fp16 B: 2 B/elem
   gemmini_extended3_config_ld(repeating_bias ? 0 : (stride_D * sizeof_D), D_scale_factor, low_D, 2);
 
   if (act == IGELU) {
@@ -677,11 +691,16 @@ static void tiled_matmul_outer(size_t dim_I, size_t dim_J, size_t dim_K,
         const size_t pad_J = j0 == J0-1 ? padding_J : 0;
         const size_t pad_K = k0 == K0-1 ? padding_K : 0;
 
-        const elem_t * a = a_transpose ? (A + k0*tile_K*DIM*stride_A + i0*tile_I*DIM)
-          : (A + i0*tile_I*DIM*stride_A + k0*tile_K*DIM);
+        // fp16: A/B elements are 2 bytes, so the per-tile base offset must be
+        // byte-scaled (like C/D). int8 (is_fp==0) uses sizeof(elem_t)=1 as before.
+        const size_t sz_AB = gemmini_is_fp ? 2 : sizeof(elem_t);
+        const elem_t * a = a_transpose
+          ? (const elem_t*)((const int8_t*)A + (k0*tile_K*DIM*stride_A + i0*tile_I*DIM)*sz_AB)
+          : (const elem_t*)((const int8_t*)A + (i0*tile_I*DIM*stride_A + k0*tile_K*DIM)*sz_AB);
 
-        const elem_t * b = b_transpose ? (B + j0*tile_J*DIM*stride_B + k0*tile_K*DIM)
-          : (B + k0*tile_K*DIM*stride_B + j0*tile_J*DIM);
+        const elem_t * b = b_transpose
+          ? (const elem_t*)((const int8_t*)B + (j0*tile_J*DIM*stride_B + k0*tile_K*DIM)*sz_AB)
+          : (const elem_t*)((const int8_t*)B + (k0*tile_K*DIM*stride_B + j0*tile_J*DIM)*sz_AB);
 
         if(a_reuse && j0 >= 1) a = NULL;
         if(b_reuse && i0 >= 1) b = NULL;
@@ -979,7 +998,7 @@ static void tiled_matmul(size_t dim_I, size_t dim_J, size_t dim_K,
         bool transpose_A, bool transpose_B,
         bool full_C, bool low_D,
         uint8_t weightA,
-        enum tiled_matmul_type_t tiled_matmul_type, bool is_mpgemm) {
+        enum tiled_matmul_type_t tiled_matmul_type, bool is_mpgemm, bool output_as_float) {
 
 #ifdef GEMMINI_ASSERTIONS
   // Make sure that the tiling factors make sense
@@ -1073,7 +1092,7 @@ static void tiled_matmul(size_t dim_I, size_t dim_J, size_t dim_K,
         transpose_A, transpose_B,
         full_C, low_D,
         weightA,
-        (int)tiled_matmul_type, is_mpgemm);
+        (int)tiled_matmul_type, is_mpgemm, output_as_float);
   } else /*if (tiled_matmul_type == CPU)*/ {
     matmul_cpu(transpose_A, transpose_B, dim_I, dim_J, dim_K,
             A, B, (const acc_t*) D, (elem_t*)C,
@@ -1293,7 +1312,7 @@ static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
         false, false,
         full_C, low_D,
         0,
-        WS, true);
+        WS, true, false);
 
 #undef partition_rows
 #undef mats_in_partition
@@ -1413,7 +1432,7 @@ static void tiled_matmul_auto(size_t dim_I, size_t dim_J, size_t dim_K,
         transpose_A, transpose_B,
         full_C, low_D,
         weightA,
-        tiled_matmul_type, false);
+        tiled_matmul_type, false, false);
 
 #undef partition_rows
 #undef mats_in_partition

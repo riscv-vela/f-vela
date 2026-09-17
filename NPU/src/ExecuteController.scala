@@ -107,6 +107,8 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val acc_scale = Reg(acc_scale_t)
   val activation = if (has_nonlinear_activations) Reg(UInt(Activation.bitwidth.W)) else Activation.NONE // TODO magic number
   val b_transpose = RegInit(false.B)
+  // fp16 matmul precision mode: latched by CONFIG_EX, 1 => fp16 op (fp datapath)
+  val is_fp = RegInit(false.B)
   val config_initialized = RegInit(false.B)
 
   val bc_address_place = Mux(DoPreloads(0), 0.U, 1.U)
@@ -153,7 +155,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val cntl = mesh_cntl_signals_q.io.deq.bits
 
   val wontolic = Module(new WontolicWithDelays(inputType, weightType, spatialArrayOutputType, accType, mesh_tag, dataflow, tree_reduction, tile_latency, mesh_output_delay,
-    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, shifter_banks))
+    tileRows, tileColumns, meshRows, meshColumns, shifter_banks, shifter_banks, support_fp = support_fp))
 
   wontolic.io.a.valid := false.B
   wontolic.io.b.valid := false.B
@@ -166,12 +168,13 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   wontolic.io.req.bits.tag := DontCare
   wontolic.io.req.bits.tag.cols := cntl.c_cols
   wontolic.io.req.bits.tag.rows := cntl.c_rows
-  wontolic.io.req.bits.total_rows := block_size.U
+  wontolic.io.req.bits.total_rows := Mux(cntl.is_fp, (2*block_size).U, block_size.U)  // fp: 2x fires
   wontolic.io.req.bits.flush := Mux(control_state === flush && !cntl_valid, 1.U, 0.U) // We want to make sure that the mesh has absorbed all inputs before flushing
   wontolic.io.req.bits.tag.rob_id := cntl.rob_id
   wontolic.io.req.bits.in_prop := Mux(control_state === flush, in_prop_flush, cntl.prop)
   wontolic.io.req.bits.b_transpose := cntl.b_transpose
   wontolic.io.req.bits.is_mpgemm := cntl.is_mpgemm
+  wontolic.io.req.bits.is_fp := cntl.is_fp
 //Hazards
   val raw_hazards_are_impossible = !ex_read_from_acc && !ex_write_to_spad // Special case where RAW hazards are impossible
 
@@ -198,9 +201,11 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
 
   io.busy := cmd.valid(0) || matmul_in_progress
 
-  val a_fire_counter = RegInit(0.U(log2Up(block_size).W))
-  val b_fire_counter = RegInit(0.U(log2Up(block_size).W))
-  val d_fire_counter = RegInit(0.U(log2Up(block_size).W))
+  // widened to hold up to 2*block_size-1 for the fp16 2-pass (fp streams
+  // 2x rows: a = 2 passes/output-row, b = 2 col-halves/k). int values unchanged.
+  val a_fire_counter = RegInit(0.U(log2Up(2*block_size).W))
+  val b_fire_counter = RegInit(0.U(log2Up(2*block_size).W))
+  val d_fire_counter = RegInit(0.U(log2Up(2*block_size).W))
 
   val a_fire_started = RegInit(false.B)
   val b_fire_started = RegInit(false.B)
@@ -244,7 +249,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val performing_single_mul = WireInit(perform_single_mul && control_state === compute)
   val performing_mul_pre = WireInit(perform_mul_pre && control_state === compute)
 
-  val total_rows = WireInit(block_size.U)
+  val total_rows_base = WireInit(block_size.U(log2Up(2*block_size+1).W))
   val in_prop = functs(0) === COMPUTE_AND_FLIP_CMD
   val is_mpgemm = rs2s(0)(rs2s(0).getWidth - 1).asBool
 
@@ -264,8 +269,11 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     */
 
     //TODO: total row 제약이 Wontolic에서도 필요한지 고민해보기, 4가 아닌 2로도 해보기.
-    total_rows := maxOf(maxOf(rows_a, rows_b), 4.U)
+    total_rows_base := maxOf(maxOf(rows_a, rows_b), 4.U)
   }
+  // fp16 2-pass: each output row needs 2 a-reads (pass0/pass1) and each k
+  // needs 2 b-reads (col-halves) => 2x the fires. int (is_fp=false) unchanged.
+  val total_rows = Mux(is_fp, (total_rows_base << 1).asUInt, total_rows_base)
 
   //mul_pre sync가 필요한지 생각해보기
   val mul_pre_counter_sub = RegInit(0.U(3.W))
@@ -273,8 +281,15 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val mul_pre_counter_lock = RegInit(false.B)
   // These variables determine whether or not the row that is currently being read should be completely padded with 0
   // 실제 행렬의 유효 범위를 초과할 경우.
-  val a_row_is_not_all_zeros = a_fire_counter < a_rows
-  val b_row_is_not_all_zeros = b_fire_counter < b_rows
+  // fp16 2-pass: the fire counters wrap at total_rows (= 2*base when is_fp),
+  // but the valid/padding bound must scale too — each logical A row (pass0/pass1)
+  // and each B k (col-half lo/hi) spans 2 spad rows. Without the 2x here, fires
+  // [rows, 2*rows) are treated as zero-padding and the spad read req drops at the
+  // 16th row (B weights k>=8 read as 0). int (is_fp=false) is unchanged.
+  val a_rows_eff = Mux(is_fp, (a_rows << 1).asUInt, a_rows)
+  val b_rows_eff = Mux(is_fp, (b_rows << 1).asUInt, b_rows)
+  val a_row_is_not_all_zeros = a_fire_counter < a_rows_eff
+  val b_row_is_not_all_zeros = b_fire_counter < b_rows_eff
   val d_row_is_not_all_zeros = d_fire_counter < d_rows
 
   // scratch pad 혹은 accumulator의 같은 뱅크에서 데이터를 가져오는 경우.
@@ -517,6 +532,9 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
               acc_scale := rs1s(0)(xLen - 1, 32).asTypeOf(acc_scale_t) // TODO magic number
               //A_Transpose 기능 삭제
               //a_transpose := config_ex_rs1.a_transpose
+              // fp16 matmul precision mode; force off unless the config builds
+              // the fp datapath, so a non-fp Gemmini can never enter fp mode.
+              is_fp := (if (support_fp) config_ex_rs1.is_fp.asBool else false.B)
               b_transpose := config_ex_rs1.b_transpose
               /* dataflow도 ws만 지원
               if (dataflow == Dataflow.BOTH) {
@@ -693,7 +711,14 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     val c_rows = UInt(log2Up(block_size + 1).W)
     val c_cols = UInt(log2Up(block_size + 1).W)
 
-    val total_rows = UInt(log2Up(block_size + 1).W)
+    // fp16: which half of the 2-spad-row fp16 logical row this read is
+    // (0 = lo = fp16 cols 0-7, 1 = hi = fp16 cols 8-15). Used to crop the read
+    // data at the right BYTE boundary (unpadded_cols is in fp16 units for fp).
+    // Valid because fp A/B blocks start at even spad rows (sp_blk = 2*DIM).
+    val a_row_parity = Bool()
+    val b_row_parity = Bool()
+
+    val total_rows = UInt(log2Up(2*block_size + 1).W)
 
     val rob_id = UDValid(UInt(log2Up(reservation_station_entries).W))
 
@@ -703,6 +728,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
     val first = Bool()
     val b_transpose = Bool()
     val is_mpgemm = Bool()
+    val is_fp = Bool()
     val im2colling = Bool()
   }
 
@@ -731,6 +757,10 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   mesh_cntl_signals_q.io.enq.bits.accumulate_zeros := accumulate_zeros
   mesh_cntl_signals_q.io.enq.bits.preload_zeros := preload_zeros //&& (in_shift(19) =/= 1.U)) //fixed for negative shift?
 
+  // fp16: lo/hi half of the fp16 logical row (see bundle comment).
+  mesh_cntl_signals_q.io.enq.bits.a_row_parity := a_address.sp_row()(0)
+  mesh_cntl_signals_q.io.enq.bits.b_row_parity := b_address.sp_row()(0)
+
   mesh_cntl_signals_q.io.enq.bits.a_unpadded_cols := Mux(a_row_is_not_all_zeros, a_cols, 0.U)
   mesh_cntl_signals_q.io.enq.bits.b_unpadded_cols := Mux(b_row_is_not_all_zeros, b_cols, 0.U)
   mesh_cntl_signals_q.io.enq.bits.d_unpadded_cols := Mux(d_row_is_not_all_zeros, d_cols, 0.U)
@@ -754,6 +784,7 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   mesh_cntl_signals_q.io.enq.bits.first := !a_fire_started && !b_fire_started && !d_fire_started
   mesh_cntl_signals_q.io.enq.bits.b_transpose := b_transpose
   mesh_cntl_signals_q.io.enq.bits.is_mpgemm := is_mpgemm
+  mesh_cntl_signals_q.io.enq.bits.is_fp := is_fp
 
   mesh_cntl_signals_q.io.enq.bits.im2colling := im2col_wire && im2col_en
   val im2ColData = io.im2col.resp.bits.a_im2col.asUInt
@@ -789,8 +820,24 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
   val dataB_unpadded = MuxCase(readData(cntl.b_bank), Seq(cntl.preload_zeros -> 0.U, cntl.b_read_from_acc -> accReadData(cntl.b_bank_acc)))
   val dataD_unpadded = MuxCase(readData(cntl.d_bank), Seq(cntl.accumulate_zeros -> 0.U, cntl.d_read_from_acc -> accReadData(cntl.d_bank_acc)))
 
-  val dataA = VecInit(dataA_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.a_unpadded_cols, d, inputType.zero)})
-  val dataB = VecInit(dataB_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.b_unpadded_cols, d, inputType.zero)})
+  // fp16: unpadded_cols is in ELEMENT units — int8 for int ops, fp16 for fp
+  // ops. The crop index below is an int8-BYTE index, so for fp the threshold must
+  // be converted to bytes AND split across the 2-spad-row fp16 logical row:
+  //   lo row (parity 0) holds fp16 cols 0-7  -> valid bytes = min(2*cols, 16)
+  //   hi row (parity 1) holds fp16 cols 8-15 -> valid bytes = clamp(2*cols-16, 0, 16)
+  // Without this, a partial fp tile (J or K not a multiple of 16) is cropped at
+  // cols int8-bytes = cols/2 fp16 -> half the valid weights/activations zeroed.
+  def fp_crop_bytes(cols_fp16: UInt, hi_half: Bool): UInt = {
+    val lo_bytes = Mux(cols_fp16 >= 8.U, block_size.U, cols_fp16 << 1)
+    val hi_bytes = Mux(cols_fp16 >= block_size.U, block_size.U,
+      Mux(cols_fp16 > 8.U, (cols_fp16 - 8.U) << 1, 0.U))
+    Mux(hi_half, hi_bytes, lo_bytes)
+  }
+  val a_crop_cols = Mux(cntl.is_fp, fp_crop_bytes(cntl.a_unpadded_cols, cntl.a_row_parity), cntl.a_unpadded_cols)
+  val b_crop_cols = Mux(cntl.is_fp, fp_crop_bytes(cntl.b_unpadded_cols, cntl.b_row_parity), cntl.b_unpadded_cols)
+
+  val dataA = VecInit(dataA_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < a_crop_cols, d, inputType.zero)})
+  val dataB = VecInit(dataB_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < b_crop_cols, d, inputType.zero)})
   val dataD = VecInit(dataD_unpadded.asTypeOf(Vec(block_size, inputType)).zipWithIndex.map { case (d, i) => Mux(i.U < cntl.d_unpadded_cols, d, inputType.zero)})
 
   // Pop responses off the scratchpad io ports
@@ -907,17 +954,23 @@ class ExecuteController[T <: Data, U <: Data, V <: Data](xLen: Int, tagWidth: In
       io.acc.write(i).valid := Mux(wontolic.io.resp.bits.is_mpgemm, acc_valid, acc_valid && w_bank === i.U)
       // io.acc.write(i).valid := acc_valid
       io.acc.write(i).bits.addr := w_row
-      val flatData = Mux(wontolic.io.resp.bits.is_mpgemm, mpgemm_data_chunks(i), mpgemm_data_chunks(0))
+      // Guard the chunk index at elaboration time: the number of output chunks
+      // is ceil(output_width / block_size), which equals acc_banks only for the
+      // wide mpgemm (int) case; banks beyond the chunk count fall back to chunk 0.
+      val chunk_i = if (i < mpgemm_data_chunks.size) mpgemm_data_chunks(i) else mpgemm_data_chunks(0)
+      val flatData = Mux(wontolic.io.resp.bits.is_mpgemm, chunk_i, mpgemm_data_chunks(0))
       // val flatData = mpgemm_data_chunks(i)
       io.acc.write(i).bits.data :=  VecInit(flatData.map(e => VecInit(Seq(e))))
       io.acc.write(i).bits.acc := w_address.accumulate
       io.acc.write(i).bits.mask := w_mask.flatMap(b => Seq.fill(accType.getWidth / (aligned_to * 8))(b))
+      io.acc.write(i).bits.is_fp := wontolic.io.resp.bits.is_fp   // fp16 matmul: fp32 accumulate
     } else {
       io.acc.write(i).valid := false.B
       io.acc.write(i).bits.addr := DontCare
       io.acc.write(i).bits.data := DontCare
       io.acc.write(i).bits.acc := DontCare
       io.acc.write(i).bits.mask := DontCare
+      io.acc.write(i).bits.is_fp := false.B
     }
 
     assert(!(io.acc.write(i).valid && !io.acc.write(i).ready), "Execute controller write to AccumulatorMem was skipped")

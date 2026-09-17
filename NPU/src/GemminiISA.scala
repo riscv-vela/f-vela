@@ -100,7 +100,9 @@ object GemminiISA {
   val CONFIG_MVIN_RS1_UNUSED_WIDTH = 2
   val CONFIG_MVIN_RS1_SHRINK_WIDTH = 1
   val CONFIG_MVIN_RS1_STATE_ID_WIDTH = 2
-  val CONFIG_MVIN_RS1_SPACER_WIDTH = 8 - 2 - 1 - 2
+  val CONFIG_MVIN_RS1_IS_FP_WIDTH = 1
+  // fp16 matmul: carve 1 bit (bit5) for the fp16 load flag
+  val CONFIG_MVIN_RS1_SPACER_WIDTH = (8 - 2 - 1 - 2) - 1
   val CONFIG_MVIN_RS1_PIXEL_REPEAT_WIDTH = 8
   val CONFIG_MVIN_RS1_STRIDE_WIDTH = 16
   val CONFIG_MVIN_RS1_SCALE_WIDTH = 32
@@ -113,6 +115,9 @@ object GemminiISA {
     val _spacer1 = UInt((CONFIG_MVIN_RS1_PIXEL_REPEAT_WIDTH - pixel_repeat_bits).W)
     val pixel_repeats = UInt(pixel_repeat_bits.W)
     val _spacer0 = UInt(CONFIG_MVIN_RS1_SPACER_WIDTH.W)
+    // fp16 matmul: 1 => this mvin loads fp16 (2-byte) data, splitting each
+    // logical DRAM row into 2 spad rows (lo cols / hi cols). 0 => normal int mvin.
+    val is_fp = UInt(CONFIG_MVIN_RS1_IS_FP_WIDTH.W)
     val state_id = UInt(CONFIG_MVIN_RS1_STATE_ID_WIDTH.W)
     val shrink = UInt(CONFIG_MVIN_RS1_SHRINK_WIDTH.W)
     val _unused = UInt(CONFIG_MVIN_RS1_UNUSED_WIDTH.W)
@@ -124,7 +129,8 @@ object GemminiISA {
   val CONFIG_MVOUT_RS1_MAX_POOLING_WINDOW_SIZE_WIDTH = 2
   val CONFIG_MVOUT_RS1_UPPER_ZERO_PADDING_WIDTH = 2
   val CONFIG_MVOUT_RS1_LEFT_ZERO_PADDING_WIDTH = 2
-  val CONFIG_MVOUT_RS1_SPACER_WIDTH = (24 - 2 * 6)
+  val CONFIG_MVOUT_RS1_OUTPUT_AS_FLOAT_WIDTH = 1
+  val CONFIG_MVOUT_RS1_SPACER_WIDTH = (24 - 2 * 6) - 1
   val CONFIG_MVOUT_RS1_POOL_OUT_DIM_WIDTH = 8
   val CONFIG_MVOUT_RS1_POOL_OUT_ROWS_WIDTH = 8
   val CONFIG_MVOUT_RS1_POOL_OUT_COLS_WIDTH = 8
@@ -137,7 +143,9 @@ object GemminiISA {
     val pocols = UInt(CONFIG_MVOUT_RS1_POOL_OUT_COLS_WIDTH.W)
     val porows = UInt(CONFIG_MVOUT_RS1_POOL_OUT_ROWS_WIDTH.W)
     val pool_out_dim = UInt(CONFIG_MVOUT_RS1_POOL_OUT_DIM_WIDTH.W)
-    val _spacer = UInt(CONFIG_MVOUT_RS1_SPACER_WIDTH.W)
+    val _spacer = UInt((CONFIG_MVOUT_RS1_SPACER_WIDTH - 1).W)
+    val is_fp = UInt(1.W)   // bit13: accumulator holds raw fp32 (fp16 matmul) vs int32
+    val output_as_float = UInt(CONFIG_MVOUT_RS1_OUTPUT_AS_FLOAT_WIDTH.W)   // bit12: write C as fp32
     val lpad = UInt(CONFIG_MVOUT_RS1_LEFT_ZERO_PADDING_WIDTH.W)
     val upad = UInt(CONFIG_MVOUT_RS1_UPPER_ZERO_PADDING_WIDTH.W)
     val pool_size = UInt(CONFIG_MVOUT_RS1_MAX_POOLING_WINDOW_SIZE_WIDTH.W)
@@ -201,7 +209,8 @@ object GemminiISA {
     val _spacer2 = UInt((CONFIG_EX_RS1_ACC_SCALE_WIDTH - acc_scale_bits).W)
     val acc_scale = UInt(acc_scale_bits.W)
     val a_stride = UInt(CONFIG_EX_RS1_A_STRIDE_WIDTH.W)
-    val _spacer1 = UInt(CONFIG_EX_RS1_SPACER1_WIDTH.W)
+    val _spacer1 = UInt((CONFIG_EX_RS1_SPACER1_WIDTH - 1).W)
+    val is_fp = UInt(1.W)   // bit10: 1 = fp16 op -> fp datapath, 0 = int8/int2
     val b_transpose = UInt(CONFIG_EX_RS1_B_TRANSPOSE_WIDTH.W)
     val a_transpose = UInt(CONFIG_EX_RS1_A_TRANSPOSE_WIDTH.W)
     val set_only_strides = UInt(CONFIG_EX_RS1_SET_ONLY_STRIDES_WIDTH.W)

@@ -7,19 +7,22 @@ import gemmini.Util._
 
 class WontolicReq[T <: Data: Arithmetic, TagT <: TagQueueTag with Data](tagType: TagT, ma_length: Int) extends Bundle {
   val in_prop = Bool()
-  val total_rows = UInt(log2Up(ma_length+1).W)
+  // widened to hold 2*ma_length for the merged fp 2-pass (fp streams 2x fires)
+  val total_rows = UInt(log2Up(2*ma_length+1).W)
   val tag = tagType
   val flush = UInt(2.W)
   val b_transpose = Bool()
   val is_mpgemm = Bool()
+  val is_fp = Bool()   // merged engine: route this op to the fp datapath (FpExeUnit)
 }
 
 class WontolicResp[T <: Data: Arithmetic, TagT <: TagQueueTag with Data](inputType: T, weightType: T, outputType: T, ma_length: Int, ma_num: Int, tagType: TagT) extends Bundle {
   val data = Vec(ma_num*(inputType.getWidth / weightType.getWidth), outputType)
   val total_rows = UInt(log2Up(ma_length+1).W)
-  val tag = tagType 
+  val tag = tagType
   val last = Bool()
   val is_mpgemm = Bool()
+  val is_fp = Bool()   // merged engine: result is fp32 (route acc write to fp adder)
 }
 
 // class Wontolic[T <: Data](inputType: T, outputType: T, ma_length: Int, ma_num: Int, max_simultaneous_matmuls: Int) (implicit ev: Arithmetic[T])  extends Module {

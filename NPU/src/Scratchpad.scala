@@ -53,6 +53,9 @@ class ScratchpadMemWriteRequest(local_addr_t: LocalAddr, acc_t_bits: Int, scale_
   val pool_en = Bool()
   val store_en = Bool()
 
+  // fp32 output: write the scaled acc value as raw fp32 bits instead of saturated int
+  val output_as_float = Bool()
+  val is_fp = Bool()   // fp16 matmul: acc holds raw fp32 (not int32)
 }
 
 class ScratchpadMemWriteResponse extends Bundle {
@@ -594,6 +597,7 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
       acc_scale_latency,
       has_nonlinear_activations,
       has_normalizations,
+      support_fp,
     ))
 
     val acc_waiting_to_be_scaled = write_scale_q.io.deq.valid &&
@@ -604,6 +608,8 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
     acc_norm_unit_out.ready := acc_scale_unit.io.in.ready && acc_waiting_to_be_scaled
     acc_scale_unit.io.in.valid := acc_norm_unit_out.valid && acc_waiting_to_be_scaled
     acc_scale_unit.io.in.bits  := acc_norm_unit_out.bits
+    acc_scale_unit.io.output_as_float := write_scale_q.io.deq.bits.output_as_float
+    acc_scale_unit.io.is_fp := write_scale_q.io.deq.bits.is_fp
 
     when (acc_scale_unit.io.in.fire) {
       write_issue_q.io.enq <> write_scale_q.io.deq
@@ -635,6 +641,9 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
 
     // val acc_adders = Module(new AccPipeShared(acc_latency-1, acc_row_t, acc_banks ))
     val acc_adders = Seq.fill(acc_banks) { Module(new AccPipeShared(acc_latency-1, acc_row_t, 1)) }
+    // fp16 matmul: ONE shared fp32 adder (DIM) muxed across banks. fp writes hit
+    // a single bank at a time, so Mux1H over the per-bank is_fp&valid is exclusive.
+    val fp_acc_adder = if (support_fp) Some(Module(new AccPipeShared(acc_latency-1, acc_row_t, acc_banks, fp = true))) else None
 
     val acc_mems = {
       val banks = Seq.fill(acc_banks) { Module(new AccumulatorMem(
@@ -660,10 +669,24 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
         // acc_adders.io.inb(i) := bio.adder.op2
         // bio.adder.sum := acc_adders.io.out
 
-        acc_adders(i).io.in_sel(0) := bio.adder.valid
+        // int32 path: this bank's per-bank adder, gated off when the write is fp.
+        acc_adders(i).io.in_sel(0) := bio.adder.valid && !bio.adder.is_fp
         acc_adders(i).io.ina(0) := bio.adder.op1
         acc_adders(i).io.inb(0) := bio.adder.op2
         bio.adder.sum := acc_adders(i).io.out
+
+        // fp32 path: feed this bank's operands into the shared fp adder (selected
+        // only when fp), and broadcast its output back. AccumulatorMem muxes
+        // sum/fp_sum by the (delayed) is_fp, so only the fp-active bank consumes it.
+        fp_acc_adder match {
+          case Some(fpa) =>
+            fpa.io.in_sel(i) := bio.adder.valid && bio.adder.is_fp
+            fpa.io.ina(i)    := bio.adder.op1
+            fpa.io.inb(i)    := bio.adder.op2
+            bio.adder.fp_sum := fpa.io.out
+          case None =>
+            bio.adder.fp_sum := DontCare
+        }
 
         val ex_read_req = io.acc.read_req(i)
         val exread = ex_read_req.valid
@@ -781,6 +804,9 @@ class Scratchpad[T <: Data, U <: Data, V <: Data](config: GemminiArrayConfig[T, 
           }
         }
         bio.write.valid := false.B
+
+        // fp16 matmul: fp accumulate only comes from the exe (systolic fp result).
+        bio.write.bits.is_fp := exwrite && io.acc.write(i).bits.is_fp
 
         // bio.write.bits.acc := MuxCase(zero_writer.io.resp.bits.laddr.accumulate,
         bio.write.bits.acc := MuxCase(zero_writer_pixel_repeater.io.resp.bits.laddr.accumulate,
