@@ -26,7 +26,7 @@ class Gemmini[T <: Data : Arithmetic, U <: Data, V <: Data](val config: GemminiA
                                      (implicit p: Parameters)
   extends LazyRoCC (
     opcodes = config.opcodes,
-    nPTWPorts = if (config.use_shared_tlb) 1 else 3) { //Profiler "else 2" -> "else 3" to account for the profiler's TLB port
+    nPTWPorts = if (config.use_shared_tlb) 1 else 3) {
 
   Files.write(Paths.get(config.headerFilePath), config.generateHeader().getBytes(StandardCharsets.UTF_8))
   if (System.getenv("GEMMINI_ONLY_GENERATE_GEMMINI_H") == "1") {
@@ -35,13 +35,9 @@ class Gemmini[T <: Data : Arithmetic, U <: Data, V <: Data](val config: GemminiA
 
   val xLen = p(TileKey).core.xLen
   val spad = LazyModule(new Scratchpad(config))
-  val profiler = LazyModule(new Profiler(config, new GemminiCmd(config.reservation_station_entries))) // Add Profiler
+  val profiler = LazyModule(new Profiler(config, new GemminiCmd(config.reservation_station_entries)))
 
   override lazy val module = new GemminiModule(this)
-
-  // Add Profiler
-  // override val tlNode = if (config.use_dedicated_tl_port) spad.id_node else TLIdentityNode()
-  // override val atlNode = if (config.use_dedicated_tl_port) TLIdentityNode() else spad.id_node
   override val tlNode = if (config.use_dedicated_tl_port) spad.id_node else profiler.id_node
   override val atlNode = if (config.use_dedicated_tl_port) profiler.id_node else spad.id_node
 
@@ -55,20 +51,12 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
 
   import outer.config._
   import outer.spad
-  import outer.profiler // Add Profiler
+  import outer.profiler
 
   val ext_mem_io = if (use_shared_ext_mem) Some(IO(new ExtSpadMemIO(sp_banks, acc_banks, acc_sub_banks))) else None
   ext_mem_io.foreach(_ <> outer.spad.module.io.ext_mem.get)
 
   val tagWidth = 32
-
-  // Profiler
-  ProfileEventIO.init(profiler.module.io.profile_io.event_io)
-  // profiler.module.io.profiler_dram_addr := 0.U
-  profiler.module.io.profiler_vaddr_valid := false.B
-  profiler.module.io.profiler_vaddr := 0.U
-  profiler.module.io.profiler_status := DontCare
-
 
   // Counters
   val counters = Module(new CounterController(outer.config.num_counter, outer.xLen))
@@ -79,18 +67,20 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   counters.io.in.bits := DontCare
   counters.io.event_io.collect(spad.module.io.counter)
 
+  // Profiler
+  ProfileEventIO.init(profiler.module.io.profile_io.event_io)
+  profiler.module.io.profiler_vaddr_valid := false.B
+  profiler.module.io.profiler_vaddr := 0.U
+  profiler.module.io.profiler_status := DontCare
+
   // TLB
   implicit val edge = outer.spad.id_node.edges.out.head
-  
-  // Add Profiler: Add a new TLB for the profiler
-  // val tlb = Module(new FrontendTLB(2, tlb_size, dma_maxbytes, use_tlb_register_filter, use_firesim_simulation_counters, use_shared_tlb))
-  // (tlb.io.clients zip outer.spad.module.io.tlb).foreach(t => t._1 <> t._2)
   val nTlbClients = 3
   val tlb = Module(new FrontendTLB(nTlbClients, tlb_size, dma_maxbytes, use_tlb_register_filter, use_firesim_simulation_counters, use_shared_tlb))
   tlb.io.clients(0) <> outer.spad.module.io.tlb(0)
   tlb.io.clients(1) <> outer.spad.module.io.tlb(1)
   tlb.io.clients(2) <> profiler.module.io.tlb
-  
+
   tlb.io.exp.foreach(_.flush_skip := false.B)
   tlb.io.exp.foreach(_.flush_retry := false.B)
 
@@ -154,7 +144,6 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   profiler.module.io.profile_io.event_io.connectEventSignal(ProfileEvent.ROB_ISSUE_EX, reservation_station.io.issue.ex.fire, reservation_station.io.issue.ex.rob_id)
   profiler.module.io.profile_io.event_io.connectEventSignal(ProfileEvent.ROB_ISSUE_ST, reservation_station.io.issue.st.fire, reservation_station.io.issue.st.rob_id)
   profiler.module.io.profile_io.event_io.connectEventSignal(ProfileEvent.ROB_COMPLETE, reservation_station.io.completed.fire, reservation_station.io.completed.bits)
-  // Add Profiler: Connect the reservation station's event signals to the profiler's event IO
 
   when (io.cmd.valid && io.cmd.bits.inst.funct === CLKGATE_EN && !io.busy) {
     clock_en_reg := io.cmd.bits.rs1(0)
@@ -234,7 +223,6 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   counters.io.event_io.collect(store_controller.io.counter)
   counters.io.event_io.collect(ex_controller.io.counter)
 
-  // Add Profiler: Connect the controllers' event signals to the profiler's event IO
   // Controllers <> Profiler
   profiler.module.io.profile_io.event_io.connectEventSignal(ProfileEvent.ENTER_LD_CTRL, load_controller.io.cmd.fire, load_controller.io.cmd.bits.rob_id.bits)
   profiler.module.io.profile_io.event_io.connectEventSignal(ProfileEvent.ENTER_EX_CTRL, ex_controller.io.cmd.fire, ex_controller.io.cmd.bits.rob_id.bits)
@@ -250,8 +238,6 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   profiler.module.io.profile_io.event_io.collect(ex_controller.io.profile)
   profiler.module.io.profile_io.event_io.collect(store_controller.io.profile)
   profiler.module.io.profile_io.event_io.collect(spad.module.io.profile)
-  
-
 
   /*
   tiler.io.issue.load.ready := false.B
@@ -387,14 +373,10 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
   reservation_station_completed_arb.io.out.ready := true.B
 
   // Wire up global RoCC signals
-  // io.busy := raw_cmd.valid || loop_conv_unroller_busy || loop_matmul_unroller_busy || reservation_station.io.busy || spad.module.io.busy || unrolled_cmd.valid || loop_cmd.valid || conv_cmd.valid || gemv_loop_matmul_unroller_busy || gemv_loop_cmd.valid
-  
-  // Add Profiler: Include profiler_busy in the busy signal
   val profiler_busy = profiler.module.io.busy
   io.busy := raw_cmd.valid || loop_conv_unroller_busy || loop_matmul_unroller_busy || reservation_station.io.busy || spad.module.io.busy || unrolled_cmd.valid || loop_cmd.valid || conv_cmd.valid || gemv_loop_matmul_unroller_busy || gemv_loop_cmd.valid || profiler_busy
 
   io.interrupt := tlb.io.exp.map(_.interrupt).reduce(_ || _)
-  
 
   // assert(!io.interrupt, "Interrupt handlers have not been written yet")
 
@@ -429,7 +411,7 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
     val is_flush = risc_funct === FLUSH_CMD
     val is_counter_op = risc_funct === COUNTER_OP
     val is_clock_gate_en = risc_funct === CLKGATE_EN
-    val is_profiler_paddr = risc_funct === SET_PROFILER_PADDR // Add Profiler: Set the profiler's physical address
+    val is_profiler_paddr = risc_funct === SET_PROFILER_PADDR
 
     /*
     val is_load = (funct === LOAD_CMD) || (funct === CONFIG_CMD && config_cmd_type === CONFIG_LOAD)
@@ -457,12 +439,9 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
       unrolled_cmd.ready := true.B
     }
 
-    // Add Profiler: Set the profiler's physical address
-    .elsewhen (is_profiler_paddr) {
-      // The command being decoded here is `unrolled_cmd` (the output of Queue(loop_cmd)),
-      // so drive the profiler config from it and consume it via unrolled_cmd.ready.
-      // (Using loop_cmd here left unrolled_cmd.ready deasserted, so the SET_PROFILER_PADDR
-      //  command was never dequeued -> io.busy stuck high -> "pipeline stall" assert.)
+    .elsewhen (is_profiler_paddr){ // fixed by woojin
+      // Using loop_cmd here left unrolled_cmd.ready deasserted, so the SET_PROFILER_PADDR command was never dequeued
+      // -> io.busy stuck high -> pipeline stall
       profiler.module.io.profiler_vaddr_valid := unrolled_cmd.valid
       profiler.module.io.profiler_vaddr := unrolled_cmd.bits.cmd.rs1
       profiler.module.io.profiler_status := unrolled_cmd.bits.cmd.status

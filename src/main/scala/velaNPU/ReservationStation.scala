@@ -59,14 +59,13 @@ class ReservationStation[T <: Data : Arithmetic, U <: Data, V <: Data](config: G
 
     val counter = new CounterEventIO()
 
-    val profile = new ProfileIO(cmd_t, ROB_ID_WIDTH) // Add Profiler: Add a new IO for profiling events
+    val profile = new ProfileIO(cmd_t, ROB_ID_WIDTH)
   })
 
   // TODO make this a ChiselEnum
   val ldq :: exq :: stq :: Nil = Enum(3)
   val q_t = ldq.cloneType
 
-  // Add Profiler: Initiate all profiler signals to default values
   // Initiate all profiler signals to default values
   io.profile.issue_cmd := DontCare
   io.profile.issue_cmd.valid := false.B
@@ -378,13 +377,11 @@ class ReservationStation[T <: Data : Arithmetic, U <: Data, V <: Data](config: G
           val alloc_id = MuxCase((entries_count - 1).U, entries_type.zipWithIndex.map { case (e, i) => !e.valid -> i.U })
 
           when (!entries_type(alloc_id).valid) {
-            
-            // Add Profiler: Issue the command to the profiler with the appropriate ROB ID
+
             // Issue new entry to profiler
             io.profile.issue_cmd.cmd := new_entry.cmd
             io.profile.issue_cmd.rob_id := Cat(q.asUInt, alloc_id.pad(log2Up(res_max_per_type)))
             io.profile.issue_cmd.valid := true.B
-            // ---
 
             io.alloc.ready := true.B
             entries_type(alloc_id).valid := true.B
@@ -608,6 +605,5 @@ class ReservationStation[T <: Data : Arithmetic, U <: Data, V <: Data](config: G
   io.counter.connectEventSignal(CounterEvent.RESERVATION_STATION_ACTIVE_CYCLES, io.busy)
   io.counter.connectEventSignal(CounterEvent.RESERVATION_STATION_FULL_CYCLES, !io.alloc.ready)
 
-  // Add Profiler: Initialize the profiler event IO
   ProfileEventIO.init(io.profile.event_io)
 }

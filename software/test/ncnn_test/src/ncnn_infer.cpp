@@ -1,0 +1,434 @@
+// ncnn inference test for LeNet-5 / VGG16 / ResNet18 on the F-Vela SoC (Linux userspace).
+//
+// usage: ncnn_infer <lenet|vgg16|resnet18|all> [-d model_root] [-n loops] [-w warmup] [-t threads] [--fp16]
+//                   [--no-winograd] [--no-sgemm] [--no-packing]
+//                   [--backend cpu|npu] [--npu-calib] [--freq-mhz F] [--npu-prof-mb N]
+//
+// Expects <model_root>/<model>/{<model>.ncnn.param, <model>.ncnn.bin, input.bin, ref.bin}
+// (made by models/export_models.py). Input blob "in0", output blob "out0".
+// By default runs in fp32 so the result can be compared closely with the PyTorch reference;
+// --fp16 lets ncnn use fp16 storage/arithmetic when the CPU reports zfh/zvfh.
+//
+// Convolution backend (VelaNpuConvolution, see vela_npu_convolution.h):
+//   --backend cpu   NPU backend disabled: convolutions on the Rocket core, per-layer rdcycle
+//   --backend npu   NPU backend enabled: convolutions on the velaNPU (int8), per-layer cycles from
+//                   the NPU hardware profiler; needs <model>/<model>.npu_calib
+//   --npu-calib     write <model>/<model>.npu_calib (fp32 CPU run on calib_input.bin, or input.bin)
+//   --freq-mhz F    clock used to turn cycles into time (default 1000 = FireSim target clock)
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+
+#include <algorithm>
+#include <string>
+#include <vector>
+
+#include "cpu.h"
+#include "net.h"
+#include "vela_npu_convolution.h"
+
+struct ModelSpec
+{
+    const char* name;
+    int c, h, w;
+    int num_out;
+};
+
+static const ModelSpec kModels[] = {
+    {"lenet", 1, 32, 32, 10},
+    {"vgg16", 3, 224, 224, 1000},
+    {"resnet18", 3, 224, 224, 1000},
+};
+
+static double now_ms()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+}
+
+static bool read_floats(const std::string& path, std::vector<float>& out, size_t count)
+{
+    FILE* fp = fopen(path.c_str(), "rb");
+    if (!fp)
+    {
+        fprintf(stderr, "cannot open %s\n", path.c_str());
+        return false;
+    }
+    out.resize(count);
+    size_t n = fread(out.data(), sizeof(float), count, fp);
+    fclose(fp);
+    if (n != count)
+    {
+        fprintf(stderr, "%s: expected %zu floats, got %zu\n", path.c_str(), count, n);
+        return false;
+    }
+    return true;
+}
+
+static std::vector<int> topk(const float* v, int n, int k)
+{
+    std::vector<int> idx(n);
+    for (int i = 0; i < n; i++) idx[i] = i;
+    k = std::min(k, n);
+    std::partial_sort(idx.begin(), idx.begin() + k, idx.end(), [v](int a, int b) { return v[a] > v[b]; });
+    idx.resize(k);
+    return idx;
+}
+
+// Debug switches to narrow down crashes: disable specific ncnn convolution paths.
+static bool g_no_winograd = false, g_no_sgemm = false, g_no_packing = false;
+static bool g_dump = false; // --dump: print a checksum of every blob (compare runs on different machines)
+static bool g_trace = false; // --trace: before the timed run, compute the blobs one by one and print each layer first (find a hang)
+
+// Convolution backend selection (empty = stock ncnn, no per-layer timing)
+static std::string g_backend;
+static double g_freq_mhz = 1000.0; // target clock of the FireSim SoC (U280 emulates it at 60 MHz)
+static int g_npu_prof_mb = 128;
+
+#if defined(__riscv)
+static const char* kCycUnit = "cycles";
+#else
+static const char* kCycUnit = "ns"; // host build: no rdcycle, wall-clock ns instead
+#endif
+
+static double cyc_to_ms(uint64_t c)
+{
+#if defined(__riscv)
+    return c / (g_freq_mhz * 1e3);
+#else
+    return c / 1e6;
+#endif
+}
+
+// Per-convolution table for the last inference run.
+static void print_conv_table(const std::vector<vela::ConvStat>& stats)
+{
+    const bool npu = g_backend == "npu";
+    printf("\nconvolution layers (%s backend, %s, %.0f MHz):\n", npu ? "NPU" : "CPU", kCycUnit, g_freq_mhz);
+    if (npu)
+        printf("  %-14s %-16s %-11s %4s %8s | %12s %10s | %10s %10s %10s %s\n", "layer", "in (CxHxW)", "out C", "k/s",
+               "MMAC", "conv cycles", "conv ms", "call", "pre(CPU)", "post(CPU)", "where");
+    else
+        printf("  %-14s %-16s %-11s %4s %8s | %12s %10s\n", "layer", "in (CxHxW)", "out C", "k/s", "MMAC", "conv cycles", "conv ms");
+
+    uint64_t sum_conv = 0, sum_cpu_conv = 0, sum_npu = 0, sum_call = 0, sum_pre = 0, sum_post = 0, sum_macs = 0;
+    int n_npu = 0, n_cpu = 0;
+    for (const vela::ConvStat& s : stats)
+    {
+        char in_s[32], out_s[16], ks[16];
+        snprintf(in_s, sizeof(in_s), "%dx%dx%d", s.in_c, s.in_h, s.in_w);
+        snprintf(out_s, sizeof(out_s), "%dx%dx%d", s.out_c, s.out_h, s.out_w);
+        snprintf(ks, sizeof(ks), "%d/%d", s.kernel, s.stride);
+        const uint64_t conv = s.on_npu ? s.npu_cycles : s.cpu_cycles;
+        sum_conv += conv;
+        sum_macs += s.macs;
+        if (s.on_npu)
+        {
+            n_npu++;
+            sum_npu += s.npu_cycles;
+            sum_call += s.call_cycles;
+            sum_pre += s.pre_cycles;
+            sum_post += s.post_cycles;
+        }
+        else
+        {
+            n_cpu++;
+            sum_cpu_conv += s.cpu_cycles;
+        }
+        if (npu)
+        {
+            std::string where = s.on_npu ? "NPU" : "CPU (" + s.fallback + ")";
+            if (s.profile_overflow) where += " [profile buffer overflow]";
+            printf("  %-14s %-16s %-11s %4s %8.2f | %12llu %10.3f | %10llu %10llu %10llu %s\n", s.name.c_str(), in_s,
+                   out_s, ks, s.macs / 1e6, (unsigned long long)conv, cyc_to_ms(conv), (unsigned long long)s.call_cycles,
+                   (unsigned long long)s.pre_cycles, (unsigned long long)s.post_cycles, where.c_str());
+        }
+        else
+            printf("  %-14s %-16s %-11s %4s %8.2f | %12llu %10.3f\n", s.name.c_str(), in_s, out_s, ks, s.macs / 1e6,
+                   (unsigned long long)conv, cyc_to_ms(conv));
+    }
+    printf("  total: %zu conv layers, %.1f MMAC, conv %llu %s = %.3f ms\n", stats.size(), sum_macs / 1e6,
+           (unsigned long long)sum_conv, kCycUnit, cyc_to_ms(sum_conv));
+    if (npu)
+    {
+        printf("    on NPU : %d layers, profiler %llu cycles = %.3f ms (rdcycle around NPU calls %.3f ms)\n", n_npu,
+               (unsigned long long)sum_npu, cyc_to_ms(sum_npu), cyc_to_ms(sum_call));
+        printf("             CPU-side int8 quantize %.3f ms + dequantize %.3f ms\n", cyc_to_ms(sum_pre), cyc_to_ms(sum_post));
+        if (n_cpu) printf("    on CPU : %d layers (fallback), %llu cycles = %.3f ms\n", n_cpu, (unsigned long long)sum_cpu_conv, cyc_to_ms(sum_cpu_conv));
+    }
+}
+
+static int run_model(const ModelSpec& m, const std::string& root, int loops, int warmup, int threads, bool fp16)
+{
+    const std::string dir = root + "/" + m.name + "/";
+    const std::string param = dir + m.name + ".ncnn.param";
+    const std::string bin = dir + m.name + ".ncnn.bin";
+
+    printf("\n===== %s  (input %dx%dx%d) =====\n", m.name, m.c, m.h, m.w);
+    fflush(stdout);
+
+    ncnn::Net net;
+    net.opt.num_threads = threads;
+    net.opt.use_fp16_packed = fp16;
+    net.opt.use_fp16_storage = fp16;
+    net.opt.use_fp16_arithmetic = fp16;
+    net.opt.use_bf16_storage = false;
+    if (g_no_winograd) net.opt.use_winograd_convolution = false;
+    if (g_no_sgemm) net.opt.use_sgemm_convolution = false;
+    if (g_no_packing) net.opt.use_packing_layout = false;
+
+    // Convolution backend: replace Convolution in this Net only with VelaNpuConvolution
+    const std::string calib_path = dir + m.name + ".npu_calib";
+    if (!g_backend.empty())
+    {
+        vela::Config& vc = vela::config();
+        vc.stats.clear();
+        vc.calib.clear();
+        if (g_backend == "calib")
+            vc.backend = vela::Backend::Calib;
+        else if (g_backend == "npu")
+        {
+            vc.backend = vela::Backend::Npu;
+            if (!vela::load_calib(calib_path))
+            {
+                fprintf(stderr, "[%s] missing calibration %s (make it with --npu-calib)\n", m.name, calib_path.c_str());
+                return -1;
+            }
+            if (vela::npu_init(g_npu_prof_mb) != 0)
+            {
+                fprintf(stderr, "[%s] NPU init failed (binary built without VELA_NPU?)\n", m.name);
+                return -1;
+            }
+        }
+        else
+            vc.backend = vela::Backend::Cpu;
+        net.register_custom_layer("Convolution", vela::VelaNpuConvolution_layer_creator);
+    }
+
+    double t0 = now_ms();
+    if (net.load_param(param.c_str()) != 0 || net.load_model(bin.c_str()) != 0)
+    {
+        fprintf(stderr, "[%s] failed to load %s / %s\n", m.name, param.c_str(), bin.c_str());
+        return -1;
+    }
+    printf("load      : %.1f ms\n", now_ms() - t0);
+
+    std::vector<float> input, ref;
+    std::string input_path = dir + "input.bin";
+    if (g_backend == "calib")
+    {
+        // calibrate on a different input than the one we test with, when available
+        FILE* fp = fopen((dir + "calib_input.bin").c_str(), "rb");
+        if (fp)
+        {
+            fclose(fp);
+            input_path = dir + "calib_input.bin";
+        }
+        printf("calibration input: %s\n", input_path.c_str());
+    }
+    if (!read_floats(input_path, input, (size_t)m.c * m.h * m.w)) return -1;
+    bool have_ref = read_floats(dir + "ref.bin", ref, (size_t)m.num_out);
+
+    ncnn::Mat in(m.w, m.h, m.c);
+    for (int q = 0; q < m.c; q++)
+        memcpy(in.channel(q), input.data() + (size_t)q * m.h * m.w, sizeof(float) * m.h * m.w);
+
+    if (g_trace)
+    {
+        // blobs are in topological order, so extracting them in order runs one more layer per step;
+        // the last TRACE line printed names the layer that did not finish
+        ncnn::Extractor ex = net.create_extractor();
+        ex.input("in0", in);
+        const std::vector<ncnn::Blob>& blobs = net.blobs();
+        for (size_t b = 0; b < blobs.size(); b++)
+        {
+            const ncnn::Layer* L = blobs[b].producer >= 0 ? net.layers()[blobs[b].producer] : 0;
+            printf("TRACE %3zu %-8s %-14s %-20s", b, blobs[b].name.c_str(), L ? L->type.c_str() : "-", L ? L->name.c_str() : "-");
+            fflush(stdout);
+            ncnn::Mat mb;
+            double s = now_ms();
+            int r = ex.extract((int)b, mb);
+            printf(" -> %s %dx%dx%d ep%d  %.1f ms\n", r == 0 ? "ok" : "FAIL", mb.w, mb.h, mb.c, mb.elempack, now_ms() - s);
+            fflush(stdout);
+        }
+    }
+
+    ncnn::Mat out;
+    std::vector<double> times;
+    for (int i = 0; i < warmup + loops; i++)
+    {
+        ncnn::Extractor ex = net.create_extractor();
+        vela::config().stats.clear(); // keep only the last run's per-layer numbers
+        double s = now_ms();
+        ex.input("in0", in);
+        if (ex.extract("out0", out) != 0)
+        {
+            fprintf(stderr, "[%s] extract failed\n", m.name);
+            return -1;
+        }
+        double e = now_ms() - s;
+        if (i >= warmup) times.push_back(e);
+        printf("  %s %d: %.2f ms\n", i < warmup ? "warmup" : "run   ", i < warmup ? i : i - warmup, e);
+        fflush(stdout);
+    }
+
+    if (g_dump)
+    {
+        // every blob, unpacked fp32: name, producer layer, shape, sum, sum|x|, first values
+        ncnn::Extractor ex = net.create_extractor();
+        ex.input("in0", in);
+        const std::vector<ncnn::Blob>& blobs = net.blobs();
+        for (size_t b = 0; b < blobs.size(); b++)
+        {
+            ncnn::Mat mb;
+            if (ex.extract((int)b, mb) != 0) { printf("DUMP %s extract failed\n", blobs[b].name.c_str()); continue; }
+            ncnn::Mat f = mb.reshape(mb.w * mb.h * mb.d * mb.c);
+            const float* p = f;
+            double sum = 0, asum = 0;
+            for (int i = 0; i < f.w; i++) { sum += p[i]; asum += fabs(p[i]); }
+            const ncnn::Layer* L = blobs[b].producer >= 0 ? net.layers()[blobs[b].producer] : 0;
+            printf("DUMP %-6s %-14s %dx%dx%dx%d sum %.6e asum %.6e first", blobs[b].name.c_str(), L ? L->type.c_str() : "-",
+                   mb.w, mb.h, mb.d, mb.c, sum, asum);
+            for (int i = 0; i < f.w && i < 4; i++) printf(" %.6e", p[i]);
+            printf("\n");
+        }
+        fflush(stdout);
+    }
+
+    ncnn::Mat flat = out.reshape(out.w * out.h * out.c);
+    const float* o = flat;
+    const int n = flat.w;
+
+    if (!times.empty())
+    {
+        double mn = times[0], mx = times[0], sum = 0;
+        for (double t : times) { mn = std::min(mn, t); mx = std::max(mx, t); sum += t; }
+        printf("inference : min %.2f  max %.2f  avg %.2f ms  (%zu runs)\n", mn, mx, sum / times.size(), times.size());
+    }
+
+    if (g_backend == "calib")
+    {
+        if (!vela::save_calib(calib_path))
+        {
+            fprintf(stderr, "[%s] cannot write %s\n", m.name, calib_path.c_str());
+            return -1;
+        }
+        printf("calibration: wrote %zu layers to %s\n", vela::config().calib.size(), calib_path.c_str());
+        return 0;
+    }
+    if (!g_backend.empty()) print_conv_table(vela::config().stats);
+
+    std::vector<int> top = topk(o, n, 5);
+    printf("ncnn  top5:");
+    for (int i : top) printf(" %d(%.4f)", i, o[i]);
+    printf("\n");
+
+    if (!have_ref || n != m.num_out)
+    {
+        printf("result    : no reference to compare (out size %d)\n", n);
+        return 0;
+    }
+
+    std::vector<int> rtop = topk(ref.data(), n, 5);
+    printf("torch top5:");
+    for (int i : rtop) printf(" %d(%.4f)", i, ref[i]);
+    printf("\n");
+
+    double dot = 0, na = 0, nb = 0, maxdiff = 0;
+    for (int i = 0; i < n; i++)
+    {
+        dot += (double)o[i] * ref[i];
+        na += (double)o[i] * o[i];
+        nb += (double)ref[i] * ref[i];
+        maxdiff = std::max(maxdiff, (double)fabsf(o[i] - ref[i]));
+    }
+    double cos = dot / (sqrt(na) * sqrt(nb) + 1e-12);
+    // int8 NPU convolutions (per-tensor scales) cannot match fp32 to 1e-3; use a looser bound there.
+    // Host model of the int8 path gave cos 0.9999 (LeNet), 0.993 (ResNet18), 0.987 (VGG16).
+    const double cos_min = g_backend == "npu" ? 0.98 : 0.999;
+    bool pass = top[0] == rtop[0] && cos > cos_min;
+    printf("compare   : cos_sim %.6f  max_abs_diff %.5f  top1 %s\n", cos, maxdiff, top[0] == rtop[0] ? "match" : "MISMATCH");
+    printf("result    : %s\n", pass ? "PASS" : "FAIL");
+    return pass ? 0 : 1;
+}
+
+static void usage(const char* argv0)
+{
+    fprintf(stderr,
+            "usage: %s <lenet|vgg16|resnet18|all> [-d model_root] [-n loops] [-w warmup] [-t threads] [--fp16]\n"
+            "          [--no-winograd] [--no-sgemm] [--no-packing] [--dump] [--trace]\n"
+            "          [--backend cpu|npu] [--npu-calib] [--freq-mhz F] [--npu-prof-mb N]\n"
+            "  default: -d /media/ncnn_models -n 1 -w 0 -t 1 (fp32), stock ncnn convolution\n"
+            "  --backend cpu : NPU backend off, conv on Rocket, per-layer rdcycle\n"
+            "  --backend npu : NPU backend on, conv on velaNPU (int8), per-layer profiler cycles\n",
+            argv0);
+}
+
+int main(int argc, char** argv)
+{
+    if (argc < 2)
+    {
+        usage(argv[0]);
+        return 2;
+    }
+    std::string which = argv[1];
+    std::string root = "/media/ncnn_models";
+    int loops = 1, warmup = 0, threads = 1;
+    bool fp16 = false;
+    for (int i = 2; i < argc; i++)
+    {
+        std::string a = argv[i];
+        if (a == "-d" && i + 1 < argc) root = argv[++i];
+        else if (a == "-n" && i + 1 < argc) loops = atoi(argv[++i]);
+        else if (a == "-w" && i + 1 < argc) warmup = atoi(argv[++i]);
+        else if (a == "-t" && i + 1 < argc) threads = atoi(argv[++i]);
+        else if (a == "--fp16") fp16 = true;
+        else if (a == "--no-winograd") g_no_winograd = true;
+        else if (a == "--no-sgemm") g_no_sgemm = true;
+        else if (a == "--no-packing") g_no_packing = true;
+        else if (a == "--dump") g_dump = true;
+        else if (a == "--trace") g_trace = true;
+        else if (a == "--backend" && i + 1 < argc)
+        {
+            g_backend = argv[++i];
+            if (g_backend != "cpu" && g_backend != "npu")
+            {
+                usage(argv[0]);
+                return 2;
+            }
+        }
+        else if (a == "--npu-calib") g_backend = "calib";
+        else if (a == "--freq-mhz" && i + 1 < argc) g_freq_mhz = atof(argv[++i]);
+        else if (a == "--npu-prof-mb" && i + 1 < argc) g_npu_prof_mb = atoi(argv[++i]);
+        else
+        {
+            usage(argv[0]);
+            return 2;
+        }
+    }
+
+    printf("ncnn_infer: cpus=%d  rvv=%d vlenb=%d zfh=%d zvfh=%d  mode=%s threads=%d\n",
+           ncnn::get_cpu_count(), !!ncnn::cpu_support_riscv_v(), ncnn::cpu_riscv_vlenb(),
+           !!ncnn::cpu_support_riscv_zfh(), !!ncnn::cpu_support_riscv_zvfh(), fp16 ? "fp16" : "fp32", threads);
+    if (!g_backend.empty())
+        printf("conv backend: %s%s\n", g_backend.c_str(),
+               vela::npu_is_emulated() ? " (host build: NPU = int8 software model, no NPU cycles)" : " (velaNPU)");
+
+    int fails = 0, ran = 0;
+    for (const ModelSpec& m : kModels)
+    {
+        if (which != "all" && which != m.name) continue;
+        ran++;
+        if (run_model(m, root, loops, warmup, threads, fp16) != 0) fails++;
+    }
+    if (ran == 0)
+    {
+        usage(argv[0]);
+        return 2;
+    }
+    printf("\nsummary: %d/%d passed\n", ran - fails, ran);
+    return fails ? 1 : 0;
+}

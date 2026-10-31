@@ -10,6 +10,7 @@ _bak/
 bak/
 _link/*
 issue/
+rootfs/*
 
 # Generated files
 bin/

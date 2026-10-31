@@ -95,6 +95,12 @@ case class GemminiArrayConfig[T <: Data : Arithmetic, U <: Data, V <: Data](
                                                                              use_shared_ext_mem: Boolean = false,
                                                                              clock_gate: Boolean = false,
 
+                                                                             // fp16 matmul: build the fp16 exe unit (FpExeUnit) and the shared fp32
+                                                                             // accumulator adder (DIM AddRecFN, reinterpreting the 32-bit acc cell as
+                                                                             // Float(8,24)) alongside the int8/int2 units. Selected at runtime by is_fp.
+                                                                             // Requires spatialArrayOutputType = SInt(32) and DIM = 16.
+                                                                             support_fp: Boolean = false,
+
                                                                              headerFileName: String = "gemmini_params.h"
                                                        ) {
   val sp_width = meshColumns * tileColumns * inputType.getWidth

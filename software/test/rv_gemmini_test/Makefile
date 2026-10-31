@@ -69,9 +69,9 @@ LINUX_CFLAGS     := -I$(SOFTWARE)/include -I$(SOFTWARE)/libgemmini \
                      -march=rv64gc -mabi=lp64d -static
 LINUX_LDLIBS     := -lm
 
-LINUX_PROGS   := gemm ternary_gemm
-LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(LINUX_PROGS)))
-LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(LINUX_PROGS)))
+# LINUX_PROGS   := gemm ternary_gemm
+LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(PROGS)))
+LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(PROGS)))
 
 linux: $(LINUX_TARGETS) $(LINUX_DUMPS)
 

@@ -24,6 +24,7 @@ class LoopMatmulLdAReq(val block_size: Int, val coreMaxAddrBits: Int, val iterat
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val is_resadd = Bool()
   val mpgemm_transpose = Bool()
+  val is_fp = Bool()   // fp16 matmul: operand occupies 2 spad rows / DIM-block (2B/elem)
 }
 
 class LoopMatmulLdA(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_addr: Int, input_w: Int,
@@ -60,15 +61,23 @@ class LoopMatmulLdA(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: In
   val col_pad = Mux(req.transpose, req.pad_i, req.pad_k)
 
   val max_col_dim = Mux(req.transpose, req.max_i, req.max_k)
-  val max_blocks = Mux(max_col_dim <= max_block_len.U, max_col_dim, max_block_len.U)
+  // fp16: single-block per mvin (2-row split) — disable column block-batching. int unchanged.
+  val max_blocks = Mux(req.is_fp, 1.U, Mux(max_col_dim <= max_block_len.U, max_col_dim, max_block_len.U))
+
+  // fp16: element bytes = 2, and an A/B DIM-block occupies 2*block_size spad rows.
+  val ebytes = Mux(req.is_fp, 2.U, (input_w/8).U)
+  val sp_blk = Mux(req.is_fp, (2*block_size).U, block_size.U)
 
   val sp_addr_start = req.addr_start
 
-  val dram_offset = (row_iterator * req.dram_stride + col_iterator) * block_size.U * (input_w/8).U
+  val dram_offset = (row_iterator * req.dram_stride + col_iterator) * block_size.U * ebytes
   val dram_addr = req.dram_addr + LoopMatmul.castDramOffset(dram_offset)
-  val sp_addr = sp_addr_start + (row_iterator * max_col_iterator + col_iterator) * block_size.U
+  val sp_addr = sp_addr_start + (row_iterator * max_col_iterator + col_iterator) * sp_blk
   val blocks = Mux(col_iterator + max_blocks <= max_col_iterator, max_blocks, max_col_iterator-col_iterator)
-  val cols = (blocks * block_size.U) - Mux(col_iterator + blocks >= max_col_iterator, col_pad, 0.U)
+  // fp16: no col-pad crop — load the FULL col-block so the fp16 lo/hi spad
+  // split fills whole 8-fp16 rows (invalid cols masked downstream by mvout pad).
+  val cols = (blocks * block_size.U) - Mux(req.is_fp, 0.U,
+    Mux(col_iterator + blocks >= max_col_iterator, col_pad, 0.U))
   val rows = block_size.U - Mux(row_iterator === max_row_iterator-1.U, row_pad, 0.U)
 
   val mvin_cmd = Wire(new RoCCCommand)
@@ -157,6 +166,7 @@ class LoopMatmulLdBReq(val block_size: Int, val coreMaxAddrBits: Int, val iterat
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val is_resadd = Bool()
   val mpgemm_transpose = Bool()
+  val is_fp = Bool()   // fp16 matmul: operand occupies 2 spad rows / DIM-block (2B/elem)
 }
 
 class LoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_addr: Int, input_w: Int,
@@ -196,15 +206,23 @@ class LoopMatmulLdB(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: In
   val col_pad = Mux(req.transpose, req.pad_k, req.pad_j)
 
   val max_col_dim = Mux(req.transpose, req.max_k, req.max_j)
-  val max_blocks = Mux(max_col_dim <= max_block_len.U, max_col_dim, max_block_len.U)
+  // fp16: single-block per mvin (2-row split) — disable column block-batching. int unchanged.
+  val max_blocks = Mux(req.is_fp, 1.U, Mux(max_col_dim <= max_block_len.U, max_col_dim, max_block_len.U))
 
-  val sp_addr_start = Mux(req.is_resadd, req.addr_end, req.addr_end - req.max_k * req.max_j * block_size.U)
+  // fp16: element bytes = 2, and an A/B DIM-block occupies 2*block_size spad rows.
+  val ebytes = Mux(req.is_fp, 2.U, (input_w/8).U)
+  val sp_blk = Mux(req.is_fp, (2*block_size).U, block_size.U)
 
-  val dram_offset = (row_iterator * req.dram_stride + col_iterator) * block_size.U * (input_w/8).U
+  val sp_addr_start = Mux(req.is_resadd, req.addr_end, req.addr_end - req.max_k * req.max_j * sp_blk)
+
+  val dram_offset = (row_iterator * req.dram_stride + col_iterator) * block_size.U * ebytes
   val dram_addr = req.dram_addr + LoopMatmul.castDramOffset(dram_offset)
-  val sp_addr = sp_addr_start + (row_iterator * max_col_iterator + col_iterator) * block_size.U
+  val sp_addr = sp_addr_start + (row_iterator * max_col_iterator + col_iterator) * sp_blk
   val blocks = Mux(col_iterator + max_blocks <= max_col_iterator, max_blocks, max_col_iterator-col_iterator)
-  val cols = (blocks * block_size.U) - Mux(col_iterator + blocks >= max_col_iterator, col_pad, 0.U)
+  // fp16: no col-pad crop — load the FULL col-block so the fp16 lo/hi spad
+  // split fills whole 8-fp16 rows (invalid cols masked downstream by mvout pad).
+  val cols = (blocks * block_size.U) - Mux(req.is_fp, 0.U,
+    Mux(col_iterator + blocks >= max_col_iterator, col_pad, 0.U))
   val rows = block_size.U - Mux(row_iterator === max_row_iterator-1.U, row_pad, 0.U)
 
   val mvin_cmd = Wire(new RoCCCommand)
@@ -390,6 +408,7 @@ class LoopMatmulExecuteReq(val block_size: Int, val coreMaxAddrBits: Int, val it
   val loop_id = UInt(log2Up(concurrent_loops).W)
   val skip = Bool()
   val is_mpgemm = Bool()
+  val is_fp = Bool()   // fp16 matmul: A/B occupy 2 spad rows / DIM-block
 }
 
 class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth: Int, max_addr: Int, max_acc_addr: Int, concurrent_loops: Int,
@@ -429,7 +448,10 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   val mpgemm_transpose = req.is_mpgemm && req.b_transpose
 
   val c_addr_start = /*(BigInt(1) << 31).U |*/ req.c_addr_start
-  val b_addr_start = req.b_addr_end - req.max_k * req.max_j * block_size.U
+  // fp16: A/B occupy 2*block_size spad rows / DIM-block (C/acc unchanged).
+  val sp_blk = Mux(req.is_fp, (2*block_size).U, block_size.U)
+
+  val b_addr_start = req.b_addr_end - req.max_k * req.max_j * sp_blk
 
   val k = Reg(UInt(iterator_bitwidth.W))
   val j = Reg(UInt(iterator_bitwidth.W))
@@ -443,8 +465,8 @@ class LoopMatmulExecute(block_size: Int, coreMaxAddrBits: Int, iterator_bitwidth
   val a_max_col = Mux(req.a_transpose, req.max_i, req.max_k)
   val b_max_col = Mux(req.b_transpose, req.max_k, req.max_j)
 
-  val a_addr = req.a_addr_start + (a_row * a_max_col + a_col) * block_size.U
-  val b_addr = b_addr_start + (b_row * b_max_col + b_col) * block_size.U
+  val a_addr = req.a_addr_start + (a_row * a_max_col + a_col) * sp_blk
+  val b_addr = b_addr_start + (b_row * b_max_col + b_col) * sp_blk
   val c_addr_base = c_addr_start + (i * req.max_j + j) * block_size.U
   val c_addr_mpgemm = c_addr_start + (i * req.max_j + j) * block_size.U * 4.U
   val c_addr = Mux(req.is_mpgemm, c_addr_mpgemm, c_addr_base)
@@ -804,6 +826,7 @@ class LoopMatmulState(val iterator_bitwidth: Int, val coreMaxAddrBits: Int, val 
   val b_transpose = Bool()
 
   val is_mpgemm = Bool()
+  val is_fp = Bool()   // fp16 matmul mode (2 spad rows / DIM-block for A/B)
 
   val act = UInt(Activation.bitwidth.W)
 
@@ -1031,6 +1054,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
         loop_being_configured.low_d := cmd.bits.cmd.rs1(2)
         loop_being_configured.act := cmd.bits.cmd.rs1(8+Activation.bitwidth-1, 8) // TODO magic numbers
         loop_being_configured.is_mpgemm := cmd.bits.cmd.rs1(20)
+        loop_being_configured.is_fp := cmd.bits.cmd.rs1(21)   // fp16 matmul mode
         loop_being_configured.a_ex_spad_id := cmd.bits.cmd.rs1(19, 18)
         loop_being_configured.b_ex_spad_id := cmd.bits.cmd.rs1(17, 16) 
         loop_being_configured.a_transpose := cmd.bits.cmd.rs2(0)
@@ -1061,6 +1085,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ldA.io.req.bits.addr_start := Mux(loop_requesting_ldA.a_ex_spad_id === 0.U, loop_requesting_ldA.a_addr_start, (loop_requesting_ldA.a_ex_spad_id - 1.U) * (max_addr / concurrent_loops).U)
   ldA.io.req.bits.loop_id := loop_requesting_ldA_id
   ldA.io.req.bits.is_resadd := is_resadd
+  ldA.io.req.bits.is_fp := loop_requesting_ldA.is_fp
   ldA.io.req.bits.mpgemm_transpose := loop_requesting_ldA.is_mpgemm && loop_requesting_ldA.b_transpose
 
   ldA.io.req.valid := !loop_requesting_ldA.lda_started && loop_requesting_ldA.configured
@@ -1082,6 +1107,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ldB.io.req.bits.addr_end := Mux(loop_requesting_ldB.b_ex_spad_id === 0.U, loop_requesting_ldB.b_addr_end, (loop_requesting_ldB.b_ex_spad_id) * (max_addr / concurrent_loops).U)
   ldB.io.req.bits.loop_id := loop_requesting_ldB_id
   ldB.io.req.bits.is_resadd := is_resadd
+  ldB.io.req.bits.is_fp := loop_requesting_ldB.is_fp
   ldB.io.req.bits.mpgemm_transpose := loop_requesting_ldB.is_mpgemm && loop_requesting_ldB.b_transpose
 
   ldB.io.req.valid := !loop_requesting_ldB.ldb_started && loop_requesting_ldB.configured
@@ -1108,6 +1134,7 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
   ex.io.req.bits.loop_id := loop_requesting_ex_id
   ex.io.req.bits.skip := is_resadd
   ex.io.req.bits.is_mpgemm := loop_requesting_ex.is_mpgemm
+  ex.io.req.bits.is_fp := loop_requesting_ex.is_fp
 
   ex.io.req.valid := !loop_requesting_ex.ex_started && loop_requesting_ex.lda_started &&
     loop_requesting_ex.ldb_started && loop_requesting_ex.ldd_started && loop_requesting_ex.configured 

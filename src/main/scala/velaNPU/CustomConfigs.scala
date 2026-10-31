@@ -15,6 +15,10 @@ object GemminiCustomConfigs {
   // Create your own configs here
   val baselineInferenceConfig = defaultConfig.copy(
     has_training_convs = false,
+    // fp16 matmul (runtime is_fp mode, see ConfigsFp16.scala): builds FpExeUnit next to the int unit.
+    // support_fp needs a 32-bit accumulator cell, so the array output is SInt(32) (was SInt(20)).
+    spatialArrayOutputType = SInt(32.W),
+    support_fp = true,
   )
 
   val highPerfInferenceConfig = defaultConfig.copy(

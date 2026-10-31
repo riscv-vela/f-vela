@@ -696,7 +696,13 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val dcache_kill_mem = mem_reg_valid && mem_ctrl.wxd && io.dmem.replay_next // structural hazard on writeback port
   val fpu_kill_mem = mem_reg_valid && mem_ctrl.fp && io.fpu.nack_mem
   val vec_kill_mem = mem_reg_valid && mem_ctrl.mem && io.vector.map(_.mem.block_mem).getOrElse(false.B)
-  val vec_kill_all = mem_reg_valid && io.vector.map(_.mem.block_all).getOrElse(false.B)
+  // 수정된 지점 (interrupt during vector trap check)
+  // While the vector unit blocks all younger instructions (block_all), an interrupt slot in MEM
+  // (mem_reg_xcpt_interrupt, not valid) must be replayed like a valid instruction. Upstream only
+  // replayed valid ones and dropped the interrupt slot (wb_reg_xcpt is gated by block_all) without
+  // redirecting fetch, so the frontend ran ahead on predicted paths and the interrupt was finally
+  // taken with the PC of a later, never-executed instruction as epc (instructions skipped).
+  val vec_kill_all = (mem_reg_valid || mem_reg_xcpt_interrupt) && io.vector.map(_.mem.block_all).getOrElse(false.B)
   val replay_mem  = dcache_kill_mem || mem_reg_replay || fpu_kill_mem || vec_kill_mem || vec_kill_all
   val killm_common = dcache_kill_mem || take_pc_wb || mem_reg_xcpt || !mem_reg_valid
   div.io.kill := killm_common && RegNext(div.io.req.fire)

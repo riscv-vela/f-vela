@@ -356,10 +356,10 @@ object ProfileEventIO {
     }
 }
 
-class ProfileIO[T <: Data]( // fixed by woojin
+class ProfileIO[T <: Data](
   cmd_t: T,
   ROB_ID_WIDTH: Int,
-  EVENT_ID_WIDTH: Int // EVENT_ID_WIDTH: Int = ROB_ID_WIDTH --> Scala version error: "class ProfileIO takes 3 type parameters but 2 were given" --- IGNORE ---
+  EVENT_ID_WIDTH: Int // EVENT_ID_WIDTH: Int = ROB_ID_WIDTH --> "class ProfileIO takes 3 type parameters but 2 were given" 
 ) extends Bundle {
 	def this(cmd_t: T, ROB_ID_WIDTH: Int) = { // 인자 2개만 들어왔을때,
 		this(cmd_t, ROB_ID_WIDTH, ROB_ID_WIDTH) // ROB_ID_WIDTH를 두 번 넘겨줌

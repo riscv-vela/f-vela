@@ -1,8 +1,7 @@
 // See LICENSE for license details.
 // 프로파일러+ternary matmul 추가 gemmini.h 
-#ifndef SRC_MAIN_C_GEMMINI_H
-#define SRC_MAIN_C_GEMMINI_H
-
+#ifndef PF_GEMMINI_H
+#define PF_GEMMINI_H
 #undef abs
 
 #include <stdint.h>
@@ -12,15 +11,15 @@
 #include <limits.h>
 #include <stdbool.h>
 
-#include "include/gemmini_params.h"
+#include "gemmini_params.h"
 
 #define GEMMINI_ASSERTIONS
 
 // Accelerator interface
-#include "rocc-software/src/xcustom.h"
+#include "xcustom.h"
 
 // Counter Definition
-#include "include/gemmini_counter.h"
+#include "gemmini_counter.h"
 
 #define k_CONFIG 0
 #define k_MVIN2 1
@@ -979,7 +978,7 @@ static void tiled_matmul(size_t dim_I, size_t dim_J, size_t dim_K,
         bool transpose_A, bool transpose_B,
         bool full_C, bool low_D,
         uint8_t weightA,
-        enum tiled_matmul_type_t tiled_matmul_type, bool is_mpgemm) {
+        enum tiled_matmul_type_t tiled_matmul_type, bool is_mpgemm, bool output_as_float) {
 
 #ifdef GEMMINI_ASSERTIONS
   // Make sure that the tiling factors make sense
@@ -1293,7 +1292,7 @@ static void ternary_gemm_auto(size_t dim_I, size_t dim_J_out, size_t dim_K,
         false, false,
         full_C, low_D,
         0,
-        WS, true);
+        WS, true, false);
 
 #undef partition_rows
 #undef mats_in_partition
@@ -1413,7 +1412,7 @@ static void tiled_matmul_auto(size_t dim_I, size_t dim_J, size_t dim_K,
         transpose_A, transpose_B,
         full_C, low_D,
         weightA,
-        tiled_matmul_type, false);
+        tiled_matmul_type, false, false);
 
 #undef partition_rows
 #undef mats_in_partition

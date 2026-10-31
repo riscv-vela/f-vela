@@ -369,7 +369,10 @@ class VectorMemUnit(sgSize: Option[BigInt] = None)(implicit p: Parameters) exten
 
   val store_rob = Module(new ReorderBuffer(Bool(), vParams.vsifqEntries))
   sas.io.tag <> store_rob.io.reserve
-  store_rob.io.reserve.ready := sas.io.tag.ready && sas.io.out.fire
+  // Reserve a store ROB tag only for an entry that sends a request (as upstream Saturn).
+  // A masked entry (e.g. the other half of a segment split at a page boundary) gets no store ack,
+  // and the sifq dequeues it without the ROB, so a tag reserved for it would block the ROB forever.
+  store_rob.io.reserve.ready := sas.io.req.fire
 
   sifq.io.enq.valid := store_req_q.io.deq.valid && scu.io.pop.ready && (store_req.ready || store_req_q.io.deq.bits.sifq.masked)
   sifq.io.enq.bits := store_req_q.io.deq.bits.sifq

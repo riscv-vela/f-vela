@@ -7,7 +7,7 @@
 #   usage:
 #     make            # build every test (bare-metal)
 #     make vfpid_4f   # build a single test (target == source basename)
-#     make linux      # build *_linux.c sources for Linux (firemarshal/busybox) userspace
+#     make linux      # build all tests for Linux (firemarshal/busybox) userspace
 #     make clean
 #
 #   The RISC-V toolchain is added to PATH automatically from Chipyard's conda env.
@@ -61,7 +61,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # ---- Linux userspace build (for firemarshal/busybox images) ----------------------------------------------------------
-#   Builds *_linux.c sources against the riscv64-unknown-linux-gnu toolchain (Linux ABI, no htif
+#   Builds every source (X_linux.c in place of X.c when it exists) against the riscv64-unknown-linux-gnu toolchain (Linux ABI, no htif
 #   specs) into ./build/linux/*.linux (+ *.dump). These use the unprivileged `cycle` CSR instead of
 #   `mcycle` for timing, since mcycle is M-mode-only and traps under a Linux user process.
 LINUX_PREFIX  ?= riscv64-unknown-linux-gnu-
@@ -72,8 +72,11 @@ LINUX_BUILD_DIR := build/linux
 LINUX_CFLAGS     := -std=gnu99 -O2 -Wall -Wextra \
                      -march=$(ARCH) -mabi=$(ABI) -static
 
-LINUX_SRCS    := $(wildcard *_linux.c)
-LINUX_PROGS   := $(basename $(LINUX_SRCS))
+# Every source is built for Linux: X_linux.c if it exists (Linux variant of X.c, e.g. mcycle ->
+# cycle), otherwise X.c itself (sources that already use the cycle CSR and plain printf).
+LINUX_VARIANTS := $(wildcard *_linux.c)
+LINUX_SRCS     := $(LINUX_VARIANTS) $(filter-out $(LINUX_VARIANTS:_linux.c=.c),$(SRCS))
+LINUX_PROGS    := $(basename $(LINUX_SRCS))
 LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(LINUX_PROGS)))
 LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(LINUX_PROGS)))
 
