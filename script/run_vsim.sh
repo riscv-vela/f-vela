@@ -2,13 +2,13 @@
 ########################################################################################################################
 # run_sim.sh
 #
-#   Run the Chipyard Verilator simulation for the gemmini / pid / rope tests.
+#   Run the Chipyard Verilator simulation for the npu (velaNPU) / pid / rope / profiler / integ / conv tests.
 #   Based on verilator_sim.sh, generalized to pick the right build directory per test type.
 #
 #   usage:
-#     ./run_sim.sh <test> [program] [options]
+#     ./run_vsim.sh <test> [program] [options]
 #
-#       <test>      gemmini | pid | rope        (required)
+#       <test>      npu | pid | rope | profiler | integ | conv   (required; gemmini = alias of npu)
 #       [program]   binary basename to run (e.g. gemm, vfpid_4d, vfrope_test).
 #                   Extension optional; .riscv / .elf are auto-resolved.
 #                   Also accepts a full path to a binary. If omitted, a per-test default is used.
@@ -32,15 +32,15 @@
 #     -h, --help           show this help.
 #
 #   examples:
-#     ./run_sim.sh gemmini                 # run default gemmini test (ternary_gemm)
-#     ./run_sim.sh gemmini gemm            # run rv_gemmini_test/build/gemm.riscv
-#     ./run_sim.sh pid vfpid_4d
-#     ./run_sim.sh rope vfrope_test
-#     ./run_sim.sh gemmini --list
-#     ./run_sim.sh gemmini gemm -w         # run + dump waveform (gemm.vcd)
-#     ./run_sim.sh gemmini gemm -w --fst   # run + dump waveform in FST format (gemm.fst)
-#     ./run_sim.sh gemmini gemm -g         # run + dump waveform + open it in gtkwave
-#     ./run_sim.sh gemmini gemm -a         # run with verbose commit trace disassembled
+#     ./run_vsim.sh npu                     # run default npu test (ternary_gemm)
+#     ./run_vsim.sh npu gemm                # run vela_npu_test/build/gemm.riscv ('gemmini' = alias of npu)
+#     ./run_vsim.sh pid vfpid_4d
+#     ./run_vsim.sh rope vfrope_test
+#     ./run_vsim.sh npu --list
+#     ./run_vsim.sh npu gemm -w         # run + dump waveform (gemm.vcd)
+#     ./run_vsim.sh npu gemm -w --fst   # run + dump waveform in FST format (gemm.fst)
+#     ./run_vsim.sh npu gemm -g         # run + dump waveform + open it in gtkwave
+#     ./run_vsim.sh npu gemm -a         # run with verbose commit trace disassembled
 ########################################################################################################################
 
 set -o pipefail
@@ -69,15 +69,15 @@ usage() {
 TEST_TYPE="$1"; shift 2>/dev/null
 
 case "$TEST_TYPE" in
-    gemmini) BUILD_DIR="$SOFTWARE_DIR/test/rv_gemmini_test/build"; DEFAULT_PROG="ternary_gemm" ;;
-    pid)     BUILD_DIR="$SOFTWARE_DIR/test/rv_pid_test/build";     DEFAULT_PROG="vfpid_4d"     ;;
-    rope)    BUILD_DIR="$SOFTWARE_DIR/test/rv_rope_test/build";    DEFAULT_PROG="vfrope_test"  ;;
+    npu|gemmini) BUILD_DIR="$SOFTWARE_DIR/test/vela_npu_test/build"; DEFAULT_PROG="ternary_gemm" ;;
+    pid)     BUILD_DIR="$SOFTWARE_DIR/test/vela_vpu_pid_test/build";     DEFAULT_PROG="vfpid_4d"     ;;
+    rope)    BUILD_DIR="$SOFTWARE_DIR/test/vela_vpu_rope_test/build";    DEFAULT_PROG="vfrope_test"  ;;
     profiler) BUILD_DIR="$SOFTWARE_DIR/test/profiler_test/build"; DEFAULT_PROG="vfprofiler_test"  ;;
     integ) BUILD_DIR="$SOFTWARE_DIR/test/integ_test/build"; DEFAULT_PROG="vfinteg_test"  ;;
     conv) BUILD_DIR="$SOFTWARE_DIR/test/cmp_conv_cycle/build"; DEFAULT_PROG="custom_gemmini_mpgemm_profiler"  ;;
     -h|--help|"") usage; exit 0 ;;
     *)
-        echo "Unknown test type: '$TEST_TYPE' (expected gemmini | pid | rope | profiler | integ)"
+        echo "Unknown test type: '$TEST_TYPE' (expected npu | pid | rope | profiler | integ | conv)"
         usage
         exit 1
         ;;
@@ -161,7 +161,7 @@ fi
 
 # --- rope needs its LUT hex files next to the simulator (loadMemoryFromFileInline) ------------------------------------
 if [ "$TEST_TYPE" = "rope" ]; then
-    ROPE_SRC_DIR="$SOFTWARE_DIR/test/rv_rope_test"
+    ROPE_SRC_DIR="$SOFTWARE_DIR/test/vela_vpu_rope_test"
     if ls "$ROPE_SRC_DIR"/*.hex >/dev/null 2>&1; then
         echo "Copying RoPE LUT hex files to $VERILATOR_DIR ..."
         cp -f "$ROPE_SRC_DIR"/*.hex "$VERILATOR_DIR/"

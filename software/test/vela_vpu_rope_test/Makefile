@@ -1,5 +1,5 @@
 ########################################################################################################################
-# rv_rope_test / Makefile
+# vela_vpu_rope_test / Makefile
 #
 #   Builds the RoPE tests into ./build/:
 #     - vfrope_test.riscv       : C test (htif bare-metal, rv64gcv)   <- from vfrope_test.c

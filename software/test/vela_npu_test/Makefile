@@ -1,20 +1,21 @@
 ########################################################################################################################
-# rv_pid_test / Makefile
+# vela_npu_test / Makefile
 #
-#   Builds the PID bare-metal tests into ./build/*.riscv (+ *.dump).
-#   Mirrors the flags in this folder's CMakeLists.txt (rv64imafdv / lp64d, htif specs).
+#   Builds the velaNPU (custom Gemmini) bare-metal tests into ./build/*.riscv (+ *.dump).
 #
 #   usage:
 #     make            # build every test (bare-metal)
-#     make vfpid_4f   # build a single test (target == source basename)
-#     make linux      # build all tests for Linux (firemarshal/busybox) userspace
+#     make gemm       # build a single test (target == source basename)
+#     make linux      # build gemm + ternary_gemm for Linux (firemarshal/busybox) userspace
 #     make clean
 #
-#   The RISC-V toolchain is added to PATH automatically from Chipyard's conda env.
+#   The RISC-V toolchain is added to PATH automatically from Chipyard's conda env,
+#   so sourcing env.sh first is optional.
 ########################################################################################################################
 
 # ---- Paths -----------------------------------------------------------------------------------------------------------
 SELF_DIR   := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+SOFTWARE   := $(abspath $(SELF_DIR)/../..)
 CHIPYARD   := $(abspath $(SELF_DIR)/../../../../..)
 RISCV_BIN  := $(CHIPYARD)/.conda-env/riscv-tools/bin
 export PATH := $(RISCV_BIN):$(PATH)
@@ -27,21 +28,14 @@ CC           := $(RISCV_PREFIX)gcc
 OBJDUMP      := $(RISCV_PREFIX)objdump
 
 # ---- Flags -----------------------------------------------------------------------------------------------------------
-ARCH   := rv64imafdv
-ABI    := lp64d
-CMODEL := medany
-
-CFLAGS  := -std=gnu99 -O2 -Wall -Wextra \
-           -fno-common -fno-builtin-printf \
-           -march=$(ARCH) -mabi=$(ABI) -mcmodel=$(CMODEL) \
-           -specs=htif_nano.specs
-# NOTE: htif_nano.specs is already in CFLAGS; adding it again here breaks the
-# single-step compile+link ("spec 'link' already defined"), so it is not repeated.
-LDFLAGS := -static -Wl,-u,_printf_float
+CFLAGS := -I$(SOFTWARE)/include -I$(SOFTWARE)/libgemmini \
+          -O2 -fno-common -fno-builtin-printf \
+          -specs=htif_nano.specs -march=rv64gc -mabi=lp64d \
+          -DBAREMETAL
+LDLIBS := -lm
 
 # ---- Sources / targets -----------------------------------------------------------------------------------------------
-# *_linux.c sources are built separately by `make linux` below, so they're excluded here.
-SRCS    := $(filter-out %_linux.c,$(wildcard *.c))
+SRCS    := $(wildcard *.c)
 PROGS   := $(basename $(SRCS))
 TARGETS := $(addprefix $(BUILD_DIR)/,$(addsuffix .riscv,$(PROGS)))
 DUMPS   := $(addprefix $(BUILD_DIR)/,$(addsuffix .dump,$(PROGS)))
@@ -49,10 +43,11 @@ DUMPS   := $(addprefix $(BUILD_DIR)/,$(addsuffix .dump,$(PROGS)))
 .PHONY: all clean linux $(PROGS)
 all: $(TARGETS) $(DUMPS)
 
+# convenience: `make gemm` -> build gemm.riscv + gemm.dump
 $(PROGS): %: $(BUILD_DIR)/%.riscv $(BUILD_DIR)/%.dump
 
 $(BUILD_DIR)/%.riscv: %.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) $< -o $@
+	$(CC) $(CFLAGS) $< -o $@ $(LDLIBS)
 
 $(BUILD_DIR)/%.dump: $(BUILD_DIR)/%.riscv
 	$(OBJDUMP) -D $< > $@
@@ -61,29 +56,27 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 # ---- Linux userspace build (for firemarshal/busybox images) ----------------------------------------------------------
-#   Builds every source (X_linux.c in place of X.c when it exists) against the riscv64-unknown-linux-gnu toolchain (Linux ABI, no htif
-#   specs) into ./build/linux/*.linux (+ *.dump). These use the unprivileged `cycle` CSR instead of
-#   `mcycle` for timing, since mcycle is M-mode-only and traps under a Linux user process.
+#   gemm.c / ternary_gemm.c are already dual-mode (see `#ifndef BAREMETAL` in each file), so the
+#   same sources are reused here, just compiled with the riscv64-unknown-linux-gnu toolchain and
+#   without -DBAREMETAL / htif specs. Output goes to build/linux/*.linux (+ *.dump).
 LINUX_PREFIX  ?= riscv64-unknown-linux-gnu-
 LINUX_CC      := $(LINUX_PREFIX)gcc
 LINUX_OBJDUMP := $(LINUX_PREFIX)objdump
 
 LINUX_BUILD_DIR := build/linux
-LINUX_CFLAGS     := -std=gnu99 -O2 -Wall -Wextra \
-                     -march=$(ARCH) -mabi=$(ABI) -static
+LINUX_CFLAGS     := -I$(SOFTWARE)/include -I$(SOFTWARE)/libgemmini \
+                     -O2 -fno-common -fno-builtin-printf \
+                     -march=rv64gc -mabi=lp64d -static
+LINUX_LDLIBS     := -lm
 
-# Every source is built for Linux: X_linux.c if it exists (Linux variant of X.c, e.g. mcycle ->
-# cycle), otherwise X.c itself (sources that already use the cycle CSR and plain printf).
-LINUX_VARIANTS := $(wildcard *_linux.c)
-LINUX_SRCS     := $(LINUX_VARIANTS) $(filter-out $(LINUX_VARIANTS:_linux.c=.c),$(SRCS))
-LINUX_PROGS    := $(basename $(LINUX_SRCS))
-LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(LINUX_PROGS)))
-LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(LINUX_PROGS)))
+# LINUX_PROGS   := gemm ternary_gemm
+LINUX_TARGETS := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .linux,$(PROGS)))
+LINUX_DUMPS   := $(addprefix $(LINUX_BUILD_DIR)/,$(addsuffix .dump,$(PROGS)))
 
 linux: $(LINUX_TARGETS) $(LINUX_DUMPS)
 
 $(LINUX_BUILD_DIR)/%.linux: %.c | $(LINUX_BUILD_DIR)
-	$(LINUX_CC) $(LINUX_CFLAGS) $< -o $@
+	$(LINUX_CC) $(LINUX_CFLAGS) $< -o $@ $(LINUX_LDLIBS)
 
 $(LINUX_BUILD_DIR)/%.dump: $(LINUX_BUILD_DIR)/%.linux
 	$(LINUX_OBJDUMP) -D $< > $@

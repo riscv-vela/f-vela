@@ -11,11 +11,11 @@ set -Eeuo pipefail
 # ./fvela_firesim.sh run --binary ../software/test/profiler_test/build/linux/gemm_profiler_test.linux --attach
 #
 # rootfs/sync_rootfs.sh 로 만든 워크로드 이미지로 실행 (파일은 rootfs/NAME/overlay/)
-# ./fvela_firesim.sh run --workload rv_pid_test --attach
+# ./fvela_firesim.sh run --workload vela_vpu_pid_test --attach
 #
 # --- Bare-metal (HTIF .riscv, no Linux): the program is the boot binary, it ends by itself ---
-# ./fvela_firesim.sh run --baremetal --binary ../software/test/rv_pid_test/build/vfpid_4f.riscv --attach
-# ./fvela_firesim.sh run --baremetal ../software/test/rv_pid_test/build/vfpid_4d.riscv --skip-infrasetup --attach
+# ./fvela_firesim.sh run --baremetal --binary ../software/test/vela_vpu_pid_test/build/vfpid_4f.riscv --attach
+# ./fvela_firesim.sh run --baremetal ../software/test/vela_vpu_pid_test/build/vfpid_4d.riscv --skip-infrasetup --attach
 #
 # --- 공통 ---
 # --skip-infrasetup: FPGA 재프로그래밍 생략 (bitstream 변경 없을 때). 그래도 스테이징된 사본
@@ -87,7 +87,7 @@ run options:
 
 Examples:
   ./fvela_firesim.sh run --binary ./build/linux/my_test.linux --attach         # Linux, br-base
-  ./fvela_firesim.sh run --workload rv_pid_test --attach                       # Linux, prepared image
+  ./fvela_firesim.sh run --workload vela_vpu_pid_test --attach                       # Linux, prepared image
   ./fvela_firesim.sh run --hw-config nocustom_gemmini_only_u280 --workload ncnn_conv_test --attach
   ./fvela_firesim.sh run --baremetal --binary ./build/my_test.riscv --attach   # bare-metal
   ./fvela_firesim.sh run --baremetal ./build/other.riscv --skip-infrasetup     # next bare-metal program
@@ -138,7 +138,7 @@ PY
     fi
     [[ -z "$BOOTBIN" || -f "$BOOTBIN" ]] || die "Boot binary of workload $WORKLOAD not found: $BOOTBIN"
   fi
-  DEFAULT_BINARY="$CHIPYARD/generators/_f_vela/software/test/rv_rope_test/build/linux/vfrope_test2_linux.linux"
+  DEFAULT_BINARY="$CHIPYARD/generators/_f_vela/software/test/vela_vpu_rope_test/build/linux/vfrope_test2_linux.linux"
   TEST_BINARY="${TEST_BINARY:-$DEFAULT_BINARY}"
 }
 

@@ -5,12 +5,12 @@
 #   Builds the RISC-V test software under software/test by delegating to its top-level Makefile.
 #
 #   usage:
-#     ./testsw_build.sh                 # build all tests (gemmini + pid + rope + profiler)
-#     ./testsw_build.sh gemmini         # build only rv_gemmini_test
-#     ./testsw_build.sh pid             # build only rv_pid_test
-#     ./testsw_build.sh rope            # build only rv_rope_test
+#     ./testsw_build.sh                 # build all tests (npu + pid + rope + profiler + integ + cmp)
+#     ./testsw_build.sh npu             # build only vela_npu_test ('gemmini' = alias)
+#     ./testsw_build.sh pid             # build only vela_vpu_pid_test
+#     ./testsw_build.sh rope            # build only vela_vpu_rope_test
 #     ./testsw_build.sh profiler        # build only profiler_test
-#     ./testsw_build.sh gemmini pid     # build multiple folders
+#     ./testsw_build.sh npu pid         # build multiple folders
 #     ./testsw_build.sh clean           # clean all
 #     ./testsw_build.sh -h | --help     # show this help
 ########################################################################################################################
@@ -22,7 +22,7 @@ CHIPYARD_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
 TEST_DIR="$CHIPYARD_DIR/generators/_f_vela/software/test"
 
-VALID_TARGETS="gemmini pid rope profiler all clean"
+VALID_TARGETS="npu gemmini pid rope profiler integ cmp linux all clean"
 
 usage() {
     sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'

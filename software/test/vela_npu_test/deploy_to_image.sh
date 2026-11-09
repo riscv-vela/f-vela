@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build the Linux RoPE tests and install them into the rootfs of the FireSim workload "rv_rope_test"
-# (sims/firesim/deploy/workloads/rv_rope_test.json).
+# Build the Linux velaNPU tests and install them into the rootfs of the FireSim workload "vela_npu_test"
+# (sims/firesim/deploy/workloads/vela_npu_test.json).
 #
-# The files that go into the rootfs are managed in generators/_f_vela/rootfs/rv_rope_test/overlay/
+# The files that go into the rootfs are managed in generators/_f_vela/rootfs/vela_npu_test/overlay/
 # (symlinks to build/linux/*.linux -> /media/); this script runs `make linux`, links any new
 # build/linux/*.linux into that overlay, and calls rootfs/sync_rootfs.sh.
 #
@@ -10,18 +10,18 @@
 # run under Linux; they are run as a bare-metal workload instead (no rootfs).
 #
 # usage: ./deploy_to_image.sh [--workload NAME] [--no-build] [--size 512M] [--image PATH] [--clean] [--dry-run]
-#   --workload  install into the rootfs of FireSim workload NAME (default rv_rope_test)
+#   --workload  install into the rootfs of FireSim workload NAME (default vela_npu_test)
 #   --image     install into this existing image file instead (path, not a workload name)
 #   --no-build  do not run `make linux` first
 #   --size      grow the image to this size (default: keep the base image size)
 #   --clean     recreate the image from br-base first
-# then:  ../../../script/fvela_firesim.sh run --workload rv_rope_test --attach
-#        on target: cd /media && ./vfrope_test2_linux.linux
+# then:  ../../../script/fvela_firesim.sh run --workload vela_npu_test --attach
+#        on target: cd /media && ./gemm.linux
 set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOTFS="$(cd "$HERE/../../../rootfs" && pwd)"
-OVERLAY_MEDIA="$ROOTFS/rv_rope_test/overlay/media"
+OVERLAY_MEDIA="$ROOTFS/vela_npu_test/overlay/media"
 BUILD=1
 ARGS=()
 
@@ -50,4 +50,4 @@ for b in "$HERE"/build/linux/*.linux; do
   ln -s "$(realpath --relative-to="$OVERLAY_MEDIA" "$b")" "$link"
 done
 
-exec "$ROOTFS/sync_rootfs.sh" "${ARGS[@]}" rv_rope_test
+exec "$ROOTFS/sync_rootfs.sh" "${ARGS[@]}" vela_npu_test

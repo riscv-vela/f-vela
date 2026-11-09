@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// ---- ROM contents (rv_rope_test/make_lut.py) ---------------------------------------------------------
+// ---- ROM contents (vela_vpu_rope_test/make_lut.py) ---------------------------------------------------------
 // np.float16(x): round to nearest even, from the double
 static uint16_t f16_bits(double x) {
     const uint16_t sign = signbit(x) ? 0x8000 : 0;
@@ -119,7 +119,7 @@ int vrope_exec(const int16_t *in, int16_t *out, int m, int i0) {
 }
 #else
 // vsetvli e16 m8 (vl = 256 with VLEN 512), vle16 v8, vfrope.vx v16, v8, rs1, vse16 v16.
-// vfrope.vx = OP-V (0x57), funct3 OPIVX (4), funct6 0x12 + vm=1 -> funct7 0x25 (rv_rope_test: .word 0x4A21C1D7
+// vfrope.vx = OP-V (0x57), funct3 OPIVX (4), funct6 0x12 + vm=1 -> funct7 0x25 (vela_vpu_rope_test: .word 0x4A21C1D7
 // = vfrope v3, v2, gp). The file is built for rv64gc, so V is enabled for this block only.
 int vrope_exec(const int16_t *in, int16_t *out, int m, int i0) {
     const unsigned long rs1 = (unsigned long)(m & 0xffff) << 16 | (unsigned long)(2 * i0);

@@ -1,6 +1,6 @@
 // See LICENSE for license details.
 //
-// Profiler-instrumented version of rv_gemmini_test/ternary_gemm.c.
+// Profiler-instrumented version of vela_npu_test/ternary_gemm.c.
 //
 // Same ternary matmul workload, but with the Gemmini profiler enabled:
 //   - allocate a P[] buffer and register it with gemmini_profiler(P)

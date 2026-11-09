@@ -140,11 +140,11 @@ bare-metal) and, with `make linux`, Linux programs into `build/linux/` (FPGA Lin
 
 | Folder | What | FPGA Linux workload |
 |---|---|---|
-| `rv_gemmini_test/` | custom Gemmini: `gemm`, `matmul`, `ternary_gemm`, `mpgemm`, `fp16_matmul`, ... | `rv_gemmini_test` |
-| `rv_pid_test/` | PID controller: scalar vs vector, custom `vfpid` instructions | `rv_pid_test` |
-| `rv_rope_test/` | custom RoPE instruction `vfrope` (LUT: `make_lut.py`) | `rv_rope_test` |
+| `vela_npu_test/` | velaNPU (custom Gemmini): `gemm`, `matmul`, `ternary_gemm`, `mpgemm`, `fp16_matmul`, ... | `vela_npu_test` |
+| `vela_vpu_pid_test/` | velaVPU PID controller: scalar vs vector, custom `vfpid` instructions | `vela_vpu_pid_test` |
+| `vela_vpu_rope_test/` | velaVPU custom RoPE instruction `vfrope` (LUT: `make_lut.py`) | `vela_vpu_rope_test` |
 | `profiler_test/` | Gemmini profiler; `run_profiler.sh` makes csv/png plots | – |
-| `integ_test/` | gemmini + pid + rope + profiler in one program (single / multi-task) | – |
+| `integ_test/` | npu (Gemmini) + pid + rope + profiler in one program (single / multi-task) | – |
 | `cmp_conv_cycle/` | conv / mpgemm cycles: Rocket CPU vs stock Gemmini vs custom Gemmini (`run_cmp.sh`) | – |
 | `ncnn_test/` | ncnn LeNet / VGG16 / ResNet18 on CPU, velaNPU, stock Gemmini | `ncnn_conv_test` |
 | `bitnet_test/` | BitNet b1.58 2B (`llama-cli`) on Rocket vs velaNPU | `bitnet_test` |
@@ -152,9 +152,9 @@ bare-metal) and, with `make linux`, Linux programs into `build/linux/` (FPGA Lin
 
 ```bash
 source ../../env.sh            # from chipyard/generators/_f_vela
-./script/testsw_build.sh       # all: gemmini pid rope profiler (+ integ, cmp via software/test/Makefile)
-./script/testsw_build.sh gemmini pid
-make -C software/test linux    # Linux versions of gemmini, pid, rope, profiler, integ, cmp
+./script/testsw_build.sh       # all: npu pid rope profiler integ cmp
+./script/testsw_build.sh npu pid   # 'gemmini' still works as an alias of npu
+./script/testsw_build.sh linux # Linux versions of npu, pid, rope, profiler, integ, cmp (= make -C software/test linux)
 ```
 `ncnn_test` and `bitnet_test` have their own build steps; see their `README.md`.
 
@@ -166,14 +166,14 @@ make -C software/test linux    # Linux versions of gemmini, pid, rope, profiler,
 # build the simulator (default config FVelaSoCConfigTest) into sims/verilator/
 bash script/verilator_make.sh [-c FVelaSoCConfigTest] [-d|-w for a waveform-capable build] [--fst]
 
-# run a bare-metal test: <test> = gemmini | pid | rope | profiler | integ | conv
-bash script/run_vsim.sh gemmini ternary_gemm
+# run a bare-metal test: <test> = npu | pid | rope | profiler | integ | conv   (gemmini = alias of npu)
+bash script/run_vsim.sh npu ternary_gemm
 bash script/run_vsim.sh pid vfpid_4d
 bash script/run_vsim.sh rope vfrope_test
 bash script/run_vsim.sh profiler ternary_profiler_test
-bash script/run_vsim.sh gemmini --list           # list built programs
-bash script/run_vsim.sh gemmini gemm -w          # + waveform (needs verilator_make.sh -d)
-bash script/run_vsim.sh gemmini gemm -a          # + disassembled commit trace
+bash script/run_vsim.sh npu --list               # list built programs
+bash script/run_vsim.sh npu gemm -w              # + waveform (needs verilator_make.sh -d)
+bash script/run_vsim.sh npu gemm -a              # + disassembled commit trace
 #   -s CONFIG  simulator config, -c N  max cycles, -g  open in gtkwave
 
 # profiler plot (Verilator run + csv/png into software/test/profiler_test/build/)
@@ -244,11 +244,11 @@ after the build.
 cd script
 # Linux (Buildroot). Without --workload the workload is br-base.
 ./fvela_firesim.sh run --binary ../software/test/xxx/build/linux/my_test.linux --attach   # copies it to /media of br-base.img
-./fvela_firesim.sh run --workload rv_pid_test --attach                                    # prepared image (rootfs/)
+./fvela_firesim.sh run --workload vela_vpu_pid_test --attach                                    # prepared image (rootfs/)
 ./fvela_firesim.sh run --hw-config nocustom_gemmini_only_u280 --workload ncnn_conv_test --attach
 
 # bare-metal (.riscv with HTIF): the program is the boot binary and ends by itself
-./fvela_firesim.sh run --baremetal --binary ../software/test/rv_pid_test/build/vfpid_4f.riscv --attach
+./fvela_firesim.sh run --baremetal --binary ../software/test/vela_vpu_pid_test/build/vfpid_4f.riscv --attach
 
 ./fvela_firesim.sh attach    # back to the console (screen fsim0; detach: Ctrl-a d)
 ./fvela_firesim.sh log       # follow the uartlog of the latest run
@@ -273,20 +273,20 @@ Each test folder has a `deploy_to_image.sh`: it builds the Linux programs, links
 `rootfs/<workload>/overlay/media/` and runs `sync_rootfs.sh`. Then boot that workload.
 
 ```bash
-cd software/test/rv_pid_test
-./deploy_to_image.sh                 # make linux -> link new build/linux/*.linux -> sync into rv_pid_test.img
+cd software/test/vela_vpu_pid_test
+./deploy_to_image.sh                 # make linux -> link new build/linux/*.linux -> sync into vela_vpu_pid_test.img
 ./deploy_to_image.sh --no-build      # sync only
 ./deploy_to_image.sh -n              # dry run: list what would be copied
 ./deploy_to_image.sh --clean         # rebuild the image from br-base.img.clean (drops files no longer in the overlay)
-../../../script/fvela_firesim.sh run --workload rv_pid_test --attach
+../../../script/fvela_firesim.sh run --workload vela_vpu_pid_test --attach
 # on the target: cd /media && ls
 ```
 
 | Test folder | Workload | Goes to `/media` | Notes |
 |---|---|---|---|
-| `rv_gemmini_test/` | `rv_gemmini_test` | `build/linux/*.linux` | |
-| `rv_pid_test/` | `rv_pid_test` | `build/linux/*.linux` | |
-| `rv_rope_test/` | `rv_rope_test` | `build/linux/*.linux` | |
+| `vela_npu_test/` | `vela_npu_test` | `build/linux/*.linux` | |
+| `vela_vpu_pid_test/` | `vela_vpu_pid_test` | `build/linux/*.linux` | |
+| `vela_vpu_rope_test/` | `vela_vpu_rope_test` | `build/linux/*.linux` | |
 | `profiler_test/` | `profiler_test` | `build/linux/*.linux` | workload created on first run |
 | `ncnn_test/` | `ncnn_conv_test` | cpu/npu/gemmini binaries + `ncnn_models/` | build first (`make testbins`, models); `--models "lenet resnet18"`; 1G image |
 | `bitnet_test/` | `bitnet_test` | `llama-cli.linux`, `run_bitnet.sh`, 2 `.gguf` models, self tests | 3G image |
@@ -297,9 +297,9 @@ Files that are not build outputs (scripts, data): add a symlink in the overlay y
 `rootfs/sync_rootfs.sh <workload>`.
 
 ```bash
-rootfs/sync_rootfs.sh rv_pid_test          # copy changed files
-rootfs/sync_rootfs.sh -n rv_pid_test       # dry run
-rootfs/sync_rootfs.sh --clean rv_pid_test  # rebuild the image from the clean base, then copy
+rootfs/sync_rootfs.sh vela_vpu_pid_test          # copy changed files
+rootfs/sync_rootfs.sh -n vela_vpu_pid_test       # dry run
+rootfs/sync_rootfs.sh --clean vela_vpu_pid_test  # rebuild the image from the clean base, then copy
 ```
 Image sizes (`rootfs/<workload>/config`) and rules: [rootfs/README.md](rootfs/README.md).
 

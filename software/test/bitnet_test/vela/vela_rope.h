@@ -4,7 +4,7 @@
 //   vd = vfrope(vs2, rs1),  rs1 = m << 16 | idx      m = position (0..4095), idx = 2 * i0
 //   In each element group (dLen = 256 bits = 16 x e16 on the F-Vela SoC) lanes 0..7 hold 4 pairs
 //   (x0,x1),(x2,x3),... in Q1.15; pair k is rotated by m * theta(i0 + k), theta(i) = base^(-2i/128).
-//   Lanes 8..15 are not written. cos/sin come from two ROMs built from rv_rope_test/make_lut.py:
+//   Lanes 8..15 are not written. cos/sin come from two ROMs built from vela_vpu_rope_test/make_lut.py:
 //     A[q][i] = fp16 {sin, cos}(64 q * theta(i)),  B[r][i] = Q1.7 {sin, cos}(r * theta(i)),  m = 64 q + r
 //   The base is fixed in the bitstream (make_lut.py -> RoPELutData.scala: 500000 since 2026-11-05, 10000 before);
 //   the head size is fixed to 128. vrope_detect finds out which one the running bitstream has.

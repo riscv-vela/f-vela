@@ -299,7 +299,7 @@ void vnpu_gemm_f16(int M, int N, int K, const uint16_t *A, size_t lda, const uin
 int vnpu_init(int lock_memory) {
     int rc = 0;
     // The NPU DMA translates through its own TLB/PTW and cannot take page faults:
-    // every buffer it touches must be resident (same as the rv_gemmini_test Linux tests).
+    // every buffer it touches must be resident (same as the vela_npu_test Linux tests).
     if (lock_memory && mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
         perror("[vela] mlockall");
         rc = -1;
