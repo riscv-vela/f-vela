@@ -144,11 +144,11 @@ bare-metal) and, with `make linux`, Linux programs into `build/linux/` (FPGA Lin
 | `vela_vpu_pid_test/` | velaVPU PID controller: scalar vs vector, custom `vfpid` instructions | `vela_vpu_pid_test` |
 | `vela_vpu_rope_test/` | velaVPU custom RoPE instruction `vfrope` (LUT: `make_lut.py`) | `vela_vpu_rope_test` |
 | `profiler_test/` | Gemmini profiler; `run_profiler.sh` makes csv/png plots | – |
-| `integ_test/` | npu (Gemmini) + pid + rope + profiler in one program (single / multi-task) | – |
-| `cmp_conv_cycle/` | conv / mpgemm cycles: Rocket CPU vs stock Gemmini vs custom Gemmini (`run_cmp.sh`) | – |
-| `ncnn_test/` | ncnn LeNet / VGG16 / ResNet18 on CPU, velaNPU, stock Gemmini | `ncnn_conv_test` |
-| `bitnet_test/` | BitNet b1.58 2B (`llama-cli`) on Rocket vs velaNPU | `bitnet_test` |
-| `tvela_compiler_test/` | - | – |
+<!-- | `integ_test/` | npu (Gemmini) + pid + rope + profiler in one program (single / multi-task) | – | -->
+<!-- | `cmp_conv_cycle/` | conv / mpgemm cycles: Rocket CPU vs stock Gemmini vs custom Gemmini (`run_cmp.sh`) | – | -->
+<!-- | `ncnn_test/` | ncnn LeNet / VGG16 / ResNet18 on CPU, velaNPU, stock Gemmini | `ncnn_conv_test` | -->
+<!-- | `bitnet_test/` | BitNet b1.58 2B (`llama-cli`) on Rocket vs velaNPU | `bitnet_test` | -->
+<!-- | `tvela_compiler_test/` | - | – | -->
 
 ```bash
 source ../../env.sh            # from chipyard/generators/_f_vela
@@ -288,8 +288,8 @@ cd software/test/vela_vpu_pid_test
 | `vela_vpu_pid_test/` | `vela_vpu_pid_test` | `build/linux/*.linux` | |
 | `vela_vpu_rope_test/` | `vela_vpu_rope_test` | `build/linux/*.linux` | |
 | `profiler_test/` | `profiler_test` | `build/linux/*.linux` | workload created on first run |
-| `ncnn_test/` | `ncnn_conv_test` | cpu/npu/gemmini binaries + `ncnn_models/` | build first (`make testbins`, models); `--models "lenet resnet18"`; 1G image |
-| `bitnet_test/` | `bitnet_test` | `llama-cli.linux`, `run_bitnet.sh`, 2 `.gguf` models, self tests | 3G image |
+<!-- | `ncnn_test/` | `ncnn_conv_test` | cpu/npu/gemmini binaries + `ncnn_models/` | build first (`make testbins`, models); `--models "lenet resnet18"`; 1G image | -->
+<!-- | `bitnet_test/` | `bitnet_test` | `llama-cli.linux`, `run_bitnet.sh`, 2 `.gguf` models, self tests | 3G image | -->
 
 The generic options (`--no-build`, `--size`, `--clean`, `-n`/`--dry-run`, `--workload`, `--image`)
 are passed to `sync_rootfs.sh`; `./deploy_to_image.sh -h` lists what each script takes.
