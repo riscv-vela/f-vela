@@ -1,0 +1,259 @@
+diff --git a/ggml/CMakeLists.txt b/ggml/CMakeLists.txt
+index efd52372b..990e163c1 100644
+--- a/ggml/CMakeLists.txt
++++ b/ggml/CMakeLists.txt
+@@ -187,6 +187,8 @@ set(GGML_CPU_POWERPC_CPUTYPE "" CACHE STRING "ggml: CPU type for PowerPC")
+ # ggml core
+ set(GGML_SCHED_MAX_COPIES  "4" CACHE STRING "ggml: max input copies for pipeline parallelism")
+ option(GGML_CPU                             "ggml: enable CPU backend"                        ON)
++option(GGML_VELA                            "ggml: offload matmuls to velaNPU (Gemmini)"      OFF)
++option(GGML_VELA_EMULATE                    "ggml: emulate velaNPU in software (host test)"   OFF)
+ option(GGML_SCHED_NO_REALLOC                "ggml: disallow reallocations in ggml-alloc (for debugging)" OFF)
+ 
+ # 3rd party libs / backends
+diff --git a/ggml/src/ggml-cpu/CMakeLists.txt b/ggml/src/ggml-cpu/CMakeLists.txt
+index fd5ba9989..eae89b489 100644
+--- a/ggml/src/ggml-cpu/CMakeLists.txt
++++ b/ggml/src/ggml-cpu/CMakeLists.txt
+@@ -57,6 +57,21 @@ function(ggml_add_cpu_backend_variant_impl tag_name)
+         )
+ 
+     target_compile_features(${GGML_CPU_NAME} PRIVATE c_std_11 cxx_std_17)
++
++    # velaNPU offload (software/test/bitnet_test/vela): -DGGML_VELA=ON -DGGML_VELA_DIR=<dir with ggml-vela.c>
++    #   GGML_VELA_EMULATE=ON  -> host build, Gemmini calls are emulated in C (checks layouts on x86)
++    #   GGML_VELA_GEMMINI_INC -> directory with gemmini.h / gemmini_fp16.h (RISC-V build)
++    if (GGML_VELA)
++        target_sources(${GGML_CPU_NAME} PRIVATE ${GGML_VELA_DIR}/ggml-vela.c ${GGML_VELA_DIR}/vela_npu.c
++                                                     ${GGML_VELA_DIR}/vela_rope.c)
++        target_include_directories(${GGML_CPU_NAME} PRIVATE ${GGML_VELA_DIR})
++        target_compile_definitions(${GGML_CPU_NAME} PRIVATE GGML_USE_VELA)
++        if (GGML_VELA_EMULATE)
++            target_compile_definitions(${GGML_CPU_NAME} PRIVATE VELA_EMULATE)
++        else()
++            target_include_directories(${GGML_CPU_NAME} PRIVATE ${GGML_VELA_GEMMINI_INC})
++        endif()
++    endif()
+     target_include_directories(${GGML_CPU_NAME} PRIVATE . ggml-cpu ../../../../include)
+ 
+     if (APPLE AND GGML_ACCELERATE)
+diff --git a/ggml/src/ggml-cpu/ggml-cpu-i2s.c b/ggml/src/ggml-cpu/ggml-cpu-i2s.c
+index d2ea0d729..65ae57004 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu-i2s.c
++++ b/ggml/src/ggml-cpu/ggml-cpu-i2s.c
+@@ -180,40 +180,11 @@ void ggml_gemm_i2_i8_s(int n, float * GGML_RESTRICT s, size_t bs, const void * G
+         }
+     }
+ #else
+-    // Scalar / non-AVX2 fallback: use vec_dot row by row
+-    const int64_t row_block = ROW_BLOCK_SIZE;
+-    const int64_t col_block = COL_BLOCK_SIZE;
+-
+-#if defined(ACT_PARALLEL)
+-    for (int64_t c0 = 0; c0 < nc; c0 += col_block) {
+-        int64_t cur_c = (c0 + col_block <= nc) ? col_block : (nc - c0);
+-        for (int64_t r0 = 0; r0 < nr; r0 += row_block) {
+-            int64_t cur_r = (r0 + row_block <= nr) ? row_block : (nr - r0);
+-            const void * vy_r = (const uint8_t *)vy + r0 * n;
+-            for (int64_t c = 0; c < cur_c; ++c) {
+-                const int64_t col = c0 + c;
+-                float * s_col = s + col;
+-                const void * vx_col = (const uint8_t *)vx + col * n / 4;
+-                ggml_vec_dot_i2_i8_s(n, s_col + r0 * bs, bs, vx_col, n, vy_r, n, cur_r);
+-            }
+-        }
++    // Scalar fallback (RISC-V, ...): per activation column, one vec_dot over all nc weight rows
++    // (vec_dot writes s[0 .. nc-1], weight rows n elements apart), i.e. s[c * bs + r] as above.
++    for (int64_t c = 0; c < nr; c++) {
++        ggml_vec_dot_i2_i8_s(n, s + c * bs, 1, vx, n, (const int8_t *)vy + c * n, 0, (int)nc);
+     }
+-#else
+-    for (int64_t r0 = 0; r0 < nr; r0 += row_block) {
+-        int64_t cur_r = (r0 + row_block <= nr) ? row_block : (nr - r0);
+-        const void * vy_row = (const uint8_t *)vy + r0 * n;
+-        for (int64_t c0 = 0; c0 < nc; c0 += col_block) {
+-            int64_t cur_c = (c0 + col_block <= nc) ? col_block : (nc - c0);
+-            for (int64_t r = 0; r < cur_r; ++r) {
+-                const int64_t row = r0 + r;
+-                float * s_row = s + row * bs;
+-                const void * vy_cur = (const uint8_t *)vy_row + r * n;
+-                const void * vx_c = (const uint8_t *)vx + c0 * n / 4;
+-                ggml_vec_dot_i2_i8_s(n, s_row + c0, bs, vx_c, n, vy_cur, n, cur_c);
+-            }
+-        }
+-    }
+-#endif
+ #endif // __AVX2__
+ }
+ 
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index ec88ef29a..56651d921 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -15,6 +15,9 @@
+ #include "ggml.h"
+ #include "ggml-quants.h"
+ #include "ggml-cpu-i2s.h"
++#if defined(GGML_USE_VELA)
++#include "ggml-vela.h"   // velaNPU (Gemmini) offload, software/test/bitnet_test/vela
++#endif
+ #include "common.h"
+ 
+ #if defined(_MSC_VER) || defined(__MINGW32__)
+@@ -1492,7 +1495,8 @@ UseGgmlGemm2:;
+     if (src0->type == GGML_TYPE_I2_S && ggml_n_dims(src0) == 2) {
+         const void * src1_wdata = (src1->type == vec_dot_type) ? src1->data : params->wdata;
+         const size_t i2s_row_size = ggml_row_size(vec_dot_type, ne10);
+-        const size_t src1_col_stride = src1_cont || src1->type != vec_dot_type ? i2s_row_size : nb11;
++        const bool   i2s_src1_cont = ggml_is_contiguous(src1);   // (src1_cont exists only with GGML_USE_LLAMAFILE)
++        const size_t src1_col_stride = i2s_src1_cont || src1->type != vec_dot_type ? i2s_row_size : nb11;
+ 
+         const int64_t matmul_num_cols = 4; // gemm processes 4 columns at a time
+         int64_t src0_start = (ith * ne01) / nth;
+@@ -1879,6 +1883,29 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
+         return;
+     }
+ 
++#if defined(GGML_USE_VELA)
++    // velaNPU: I2_S (ternary) and F16 matmuls can run on Gemmini, depending on VELA_MODE (before the
++    // extra-buffer / repack paths). Thread 0 drives the NPU; the other threads return and wait at the node barrier.
++    if (tensor->op == GGML_OP_MUL_MAT) {
++        const uint64_t vela_t0 = ggml_vela_now();
++        if (!ggml_vela_mul_mat(tensor->src[0], tensor->src[1], tensor, params->ith, params->nth) &&
++            !ggml_cpu_extra_compute_forward(params, tensor)) {
++            ggml_compute_forward_mul_mat(params, tensor);
++        }
++        ggml_vela_account(tensor, params->ith, vela_t0);
++        return;
++    }
++    // velaVPU: RoPE on the RoPE unit (vfrope) with VELA_ROPE=on
++    if (tensor->op == GGML_OP_ROPE) {
++        const uint64_t vela_t0 = ggml_vela_now();
++        if (!ggml_vela_rope(tensor, params->ith, params->nth)) {
++            ggml_compute_forward_rope(params, tensor);
++        }
++        ggml_vela_account(tensor, params->ith, vela_t0);
++        return;
++    }
++#endif
++
+     // extra_buffer op?
+     if (ggml_cpu_extra_compute_forward(params, tensor)) {
+         return;
+diff --git a/ggml/src/ggml-cpu/quants.c b/ggml/src/ggml-cpu/quants.c
+index 603f51c54..5956fac56 100644
+--- a/ggml/src/ggml-cpu/quants.c
++++ b/ggml/src/ggml-cpu/quants.c
+@@ -1487,19 +1487,24 @@ static void ggml_vec_dot_i2_i8_s_1x1(int n, float * s, size_t bs, const void * v
+         s[row] = (float)sumi;
+     }
+ #else
+-    // Scalar fallback
+-    const uint8_t * x = (const uint8_t *)vx;
+-    const int8_t * y  = (const int8_t *)vy;
+-    static const int map2bit[4] = { -1, 0, 1, 0 };
++    // Scalar fallback (RISC-V, ...), same result as the AVX2 code above: nrc weight rows (bx elements apart),
++    // one activation row y. Layout of a 128-element block (32 bytes): byte p holds elements p, 32+p, 64+p,
++    // 96+p at bits 7:6, 5:4, 3:2, 1:0. Returns the sum of code (0, 1, 2) * y; the caller subtracts sum(y).
++    GGML_UNUSED(bs); GGML_UNUSED(by);
++    const int8_t * y = (const int8_t *)vy;
+     for (int row = 0; row < nrc; row++) {
+-        int32_t sum = 0;
+-        for (int i = 0; i < n; i++) {
+-            int byte_idx = i / 4;
+-            int bit_pos = 6 - 2 * (i % 4);
+-            int w = map2bit[(x[row * (n/4) + byte_idx] >> bit_pos) & 0x03];
+-            sum += w * y[i];
++        const uint8_t * x_row = (const uint8_t *)vx + row * bx / 4;
++        int32_t sumi = 0;
++        for (int b = 0; b < n / 128; b++) {
++            const uint8_t * px = x_row + b * 32;
++            const int8_t  * py = y + b * 128;
++            for (int p = 0; p < 32; p++) {
++                const int q = px[p];
++                sumi += ((q >> 6) & 3) * py[p] + ((q >> 4) & 3) * py[32 + p]
++                      + ((q >> 2) & 3) * py[64 + p] + (q & 3) * py[96 + p];
++            }
+         }
+-        s[row] = (float)sum;
++        s[row] = (float)sumi;
+     }
+ #endif
+ }
+diff --git a/src/llama-arch.cpp b/src/llama-arch.cpp
+index 0181e5961..5907d33c3 100644
+--- a/src/llama-arch.cpp
++++ b/src/llama-arch.cpp
+@@ -84,6 +84,7 @@ static const std::map<llm_arch, const char *> LLM_ARCH_NAMES = {
+     { LLM_ARCH_GLM_DSA,          "glm-dsa"          },
+     { LLM_ARCH_BITNET,           "bitnet"           },
+     { LLM_ARCH_BITNET_B158,      "bitnet-b1.58"     },
++    { LLM_ARCH_BITNET_25,        "bitnet-25"        },
+     { LLM_ARCH_T5,               "t5"               },
+     { LLM_ARCH_T5ENCODER,        "t5encoder"        },
+     { LLM_ARCH_JAIS,             "jais"             },
+@@ -1007,6 +1008,7 @@ bool llm_arch_supports_sm_tensor(const llm_arch & arch) {
+         case LLM_ARCH_GLM_DSA:
+         case LLM_ARCH_BITNET:
+         case LLM_ARCH_BITNET_B158:
++        case LLM_ARCH_BITNET_25:
+         case LLM_ARCH_T5:
+         case LLM_ARCH_NEMOTRON_H:
+         case LLM_ARCH_NEMOTRON_H_MOE:
+diff --git a/src/llama-arch.h b/src/llama-arch.h
+index 7ac4bb659..5c9da720e 100644
+--- a/src/llama-arch.h
++++ b/src/llama-arch.h
+@@ -89,6 +89,7 @@ enum llm_arch {
+     LLM_ARCH_GLM_DSA,
+     LLM_ARCH_BITNET,
+     LLM_ARCH_BITNET_B158,
++    LLM_ARCH_BITNET_25,     // BitNet b1.58 2B-4T, older GGUF name (same model as bitnet-b1.58)
+     LLM_ARCH_T5,
+     LLM_ARCH_T5ENCODER,
+     LLM_ARCH_JAIS,
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 6eda8f3da..06554c4fd 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -197,6 +197,7 @@ static llama_model * llama_model_mapping(llm_arch arch, const llama_model_params
+         case LLM_ARCH_BITNET:
+             return new llama_model_bitnet(params);
+         case LLM_ARCH_BITNET_B158:
++        case LLM_ARCH_BITNET_25:
+             return new llama_model_bitnet_b158(params);
+         case LLM_ARCH_T5:
+             return new llama_model_t5(params);
+@@ -2480,6 +2481,7 @@ llama_rope_type llama_model_rope_type(const llama_model * model) {
+         case LLM_ARCH_STABLELM:
+         case LLM_ARCH_BITNET:
+         case LLM_ARCH_BITNET_B158:
++        case LLM_ARCH_BITNET_25:
+         case LLM_ARCH_QWEN:
+         case LLM_ARCH_QWEN2:
+         case LLM_ARCH_DREAM:
+diff --git a/src/models/bitnet.cpp b/src/models/bitnet.cpp
+index 985c8d6fc..4125112c0 100644
+--- a/src/models/bitnet.cpp
++++ b/src/models/bitnet.cpp
+@@ -66,6 +66,11 @@ llama_model_bitnet::graph::graph(const llama_model & model, const llm_graph_para
+ 
+     ggml_tensor * inp_out_ids = build_inp_out_ids();
+ 
++    // BitNet b1.58 2B-4T (bitnet-b1.58 / bitnet-25) is trained with ReLU^2 in the FFN (as in BitNet's original
++    // llama.cpp, build_bitnet_158); the older "bitnet" models (1bitLLM 700M / 3B) use SiLU.
++    const llm_ffn_op_type ffn_act = (model.arch == LLM_ARCH_BITNET_B158 || model.arch == LLM_ARCH_BITNET_25)
++                                        ? LLM_FFN_RELU_SQR : LLM_FFN_SILU;
++
+     for (int il = 0; il < n_layer; ++il) {
+         ggml_tensor * inpSA = inpL;
+ 
+@@ -130,7 +135,7 @@ llama_model_bitnet::graph::graph(const llama_model & model, const llm_graph_para
+                 model.layers[il].ffn_gate, NULL, model.layers[il].ffn_gate_s,
+                 NULL,                      NULL, NULL,
+                 NULL,
+-                LLM_FFN_SILU, LLM_FFN_PAR, il);
++                ffn_act, LLM_FFN_PAR, il);
+         cb(cur, "ffn_sub_out", il);
+ 
+         cur = build_norm(cur,

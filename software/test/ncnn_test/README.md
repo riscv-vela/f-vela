@@ -65,6 +65,80 @@ after each test. FireSim also copies it to `sims/firesim/deploy/results-workload
 only when the simulation ends by itself (`poweroff` in Linux) while `firesim runworkload` is still
 waiting; after `firesim kill` / `fvela_firesim.sh stop` it is not copied.
 
+## Key metrics only: `-s` / `--summary`
+
+Every executable (`cpu_*`, `npu_*`, `gemmini_*`, `*_fp`) takes `-s`: instead of the full
+per-layer report it prints one block with HW, CYCLE_SRC (NPU only), FREQ (target clock), REPEAT, CONV_CYCLES (sum of
+per-layer medians), CONV_TIME, CONV_GOPS, UTILIZATION, CPU_PRE+POST (CPU-side quantize / fp16 prep
+around the conv, not in CONV_CYCLES), INFER_TIME (wall clock, whole network) and STATUS.
+
+```bash
+cd /media && ./cpu_lenet.riscv -s && ./npu_lenet.riscv -s && ./cpu_lenet_fp.riscv -s && ./npu_lenet_fp.riscv -s
+```
+
+## End to end (whole network) GOPS
+
+Besides the conv-only numbers, every executable measures the whole forward pass (`ex.input` +
+`ex.extract`, rdcycle, median) so NPU and Rocket can be compared including the NPU's data movement:
+
+| key (`-s`) | meaning |
+|---|---|
+| `E2E_OPS` | 2 x (conv MACs + FC MACs); FC MACs from the `.param` (`InnerProduct 2=` weight count). Pooling, ReLU, residual add, flatten have no MACs and are not counted |
+| `E2E_CYCLES` / `E2E_TIME` / `E2E_GOPS` | whole forward, everything included |
+| `E2E_SPLIT` | conv (NPU: rdcycle around the call + fence, incl. driver tiling; CPU: the kernel) / CPU prep (quantize, fp16 convert, im2col, layout) / measure (NPU only: perf counter + profiler setup/readout) / other layers (pool, FC, ... on the CPU, ncnn glue) |
+| `E2E_GOPS_NET` | NPU only: E2E without the measure part |
+
+`-m conv` (`--metric conv`) reports only the conv metrics, as before E2E was added; `-m e2e` only the
+E2E ones in summary mode; default `-m all` = both.
+
+The hardware profiler readout waits for late profiler writes after every call (~20K cycles per conv
+layer), which is larger than the LeNet convs themselves. For E2E numbers use `-p counter` (counter
+start/stop only) or read `E2E_GOPS_NET`. Detail-mode keys: `E2E.*`.
+
+```bash
+cd /media && ./cpu_lenet_fp.riscv -s && ./npu_lenet_fp.riscv -p counter -s     # fp32 CPU vs fp16 NPU
+./cpu_lenet.riscv -s && ./npu_lenet.riscv -p counter -s                     # int8 CPU vs int8 NPU
+```
+
+## NPU cycle source: `--profiler hw|counter`
+
+`npu_*` and `npu_*_fp` pick where the NPU conv cycles (`MEDIAN_CYCLE`, `CONV_CYCLES`) come from at run time
+(this replaces the former `npu_<m>2.riscv` builds):
+
+| option | cycles | use |
+|---|---|---|
+| `--profiler hw` (default) | velaNPU hardware profiler: first event start -> last event end | velaNPU's own timeline |
+| `--profiler counter` (`-p counter`) | Gemmini perf counters, cycles with the ld, ex or st controller busy; the profiler is never registered | like-for-like with `gemmini_*` on stock Gemmini (same code, no profiler DMA traffic) |
+
+`gemmini_*` always use the counters (stock Gemmini has no profiler). The perf-counter lines
+(`NPU_COUNTER_BUSY_CYCLE`, `NPU_{LD,EX,ST}_BUSY_CYCLE`, `NPU_TLB_MISS_CYCLE`) are printed in both modes.
+
+```bash
+cd /media && ./npu_lenet.riscv -p counter -s && ./npu_lenet_fp.riscv -p counter -s
+```
+
+## fp test: velaNPU fp16 vs CPU fp32
+
+`npu_lenet_fp.riscv` / `cpu_lenet_fp.riscv` (`make fp-testbins`, same source with `-DTEST_CONV_FP=1`):
+
+| | `cpu_lenet_fp` | `npu_lenet_fp` |
+|---|---|---|
+| conv | Rocket core fp32 (ncnn Convolution) | velaNPU FpExeUnit: fp16 multiply, fp32 accumulate |
+| how | ncnn fp32 kernel | CPU im2col (fp32 NCHW -> fp16 `[OH*OW][K*K*IC]`, RNE) + `tiled_matmul_auto_fp` (WS, `gemmini_fp16.h`) with the bias as one fp32 D row repeated by the NPU (`stride_D = 0`); ReLU + NHWC->NCHW on the CPU |
+| cycles | rdcycle around the conv | NPU profiler (matmul start -> completion); no quantization: `CPU_PRE_CYCLE` = `CPU_PRE.ALLOC` (buffers + one bias row, first call only) + `CPU_PRE.FP16_CVT` (input fp32 NCHW -> fp16 NHWC, once per element) + `CPU_PRE.IM2COL` (memcpy per kernel row); `CPU_POST_CYCLE` = ReLU + NHWC->NCHW |
+| PASS | top-1 = PyTorch, cos >= 0.999 | same |
+
+No calibration table (`.npu_calib`) is needed. Needs a `support_fp` bitstream (hwdb `fvela_u280`, builds
+since 2026-10-31). The fp mode has no hardware conv loop (`LOOP_CONV` has no is_fp bit), hence the CPU
+im2col. Only LeNet by default (`FP_MODELS="lenet resnet18"` to add more; im2col copies are large).
+x86 check with the fp16 software model of the FpExeUnit: `make host-fp-testbins && ./build/host/npu_lenet_fp -d models`.
+
+```bash
+make fp-testbins && ./deploy_to_image.sh
+../../../script/fvela_firesim.sh run --workload ncnn_conv_test --attach
+cd /media && ./cpu_lenet_fp.riscv && ./npu_lenet_fp.riscv
+```
+
 ## Same test on the stock (unmodified) Gemmini
 
 `gemmini_lenet.riscv` `gemmini_vgg16.riscv` `gemmini_resnet18.riscv` (also built by `make testbins`,
@@ -77,15 +151,16 @@ The ncnn layer, int8 scheme, `<m>.npu_calib`, model files and seeded input are t
 |---|---|---|
 | FireSim target | `FireSimFVelaSoCConfig` (hwdb `fvela_u280`) | `FireSimNoCustomGemminiOnlyTest` (recipe/hwdb `nocustom_gemmini_only_u280`): `gemmini.DefaultGemminiConfig` on the same Rocket HugeCore / 128-bit sbus / 8 GiB, **no vector unit** (these tests do not use one) |
 | conv call | `tiled_conv_auto(..., WS)`; same `gemmini_params.h` (DIM 16, 256 KiB sp, 64 KiB acc) -> same tiling, same command stream | same |
-| `MEDIAN_CYCLE` | profiler: first event start -> last event end | Gemmini perf counters (= `NPU_COUNTER_BUSY_CYCLE`) |
+| `MEDIAN_CYCLE` | profiler: first event start -> last event end (`--profiler counter`: perf counters, as stock) | Gemmini perf counters (= `NPU_COUNTER_BUSY_CYCLE`) |
 | `NPU_COUNTER_BUSY_CYCLE` | Gemmini perf counters: cycles with the load, execute or store controller busy (sum of `MAIN_*_CYCLES`, `src/gemmini_perf_counters.h`) | same code, same counters |
 | `NPU_CALL_CYCLE` | rdcycle around call + fence | same |
 | `NPU_{LD,EX,ST}_BUSY_CYCLE`, `NPU_TLB_MISS_CYCLE` | perf counters | same |
 
 **Compare velaNPU and stock Gemmini on `NPU_COUNTER_BUSY_CYCLE`** (and `NPU_CALL_CYCLE`): both are
 measured by identical code on both chips. `MEDIAN_CYCLE` is not like-for-like: the velaNPU profiler
-span also counts idle gaps inside a convolution, the counters do not. On velaNPU the profiler is
-still on while the counters run (its DMA writes of 8 B per event share the memory system).
+span also counts idle gaps inside a convolution, the counters do not. With the default `--profiler hw`
+the velaNPU profiler is still on while the counters run (its DMA writes of 8 B per event share the
+memory system); `npu_* --profiler counter` turns it off, so the whole run is measured as on stock Gemmini.
 
 Hardware differences that are part of velaNPU (velaNPU `baselineInferenceConfig` vs stock
 `defaultConfig`): `acc_banks` 4 vs 2, `sp_singleported` false vs true, `has_training_convs` false vs

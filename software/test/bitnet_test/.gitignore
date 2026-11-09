@@ -1,0 +1,6 @@
+# made by setup_bitnet.sh (cloned from GitHub + patches/)
+BitNet/
+BitNet-*/
+# 1.2 GB model files
+model/**/*.gguf
+README.md

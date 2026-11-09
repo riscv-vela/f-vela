@@ -48,7 +48,7 @@ fi
 #   The patch adds RocketVectorDecoder.io.vector and an EX-stage vector re-decode so a vector op
 #   issued right after a vsetvl is recognized (and stalled) before vconfig settles -- otherwise the
 #   first vector load/arith after vsetvl traps as an illegal instruction.
-#   The patched sources live under generators/_f_vela/rocket-patch/ mirroring the chipyard tree; each
+#   The patched sources live under generators/_f_vela/patch/rocket-patch/ mirroring the chipyard tree; each
 #   target is backed up as <file>.bak (once, preserving the true original) and then overwritten.
 #   To revert: restore each <file>.bak over <file> (or `git -C generators/rocket-chip checkout`).
 ROCKET_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/patch/rocket-patch"
@@ -59,7 +59,7 @@ CY_VER="$(grep -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' "$CHIPYARD_DIR/CHANGELOG.md"
 if [[ "$CY_VER" != 1.13.* ]]; then
     echo "chipyard version '${CY_VER:-unknown}' is not 1.13.x -> skipping rocket-chip source patch (unnecessary/unsafe on this version)."
 elif [ -d "$ROCKET_PATCH_DIR/generators" ]; then
-    echo "chipyard $CY_VER: applying rocket-chip vector patch from generators/_f_vela/rocket-patch ..."
+    echo "chipyard $CY_VER: applying rocket-chip vector patch from generators/_f_vela/patch/rocket-patch ..."
     while IFS= read -r -d '' pf; do
         rel="${pf#$ROCKET_PATCH_DIR/}"                       # e.g. generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
         target="$CHIPYARD_DIR/$rel"
@@ -81,25 +81,51 @@ else
 fi
 
 # ----------------------------------------------------------------------------------------------------------------------
-# Firechip patch (FVelaTargetConfigs & TargetConfigs modify)
-FIRECHIP_PATCH_DIR="$CHIPYARD_DIR/generators/_f_vela/patch/firechip-patch"
-echo "chipyard $CY_VER: applying firechip patch from generators/_f_vela/patch/firechip-patch ..."
-while IFS= read -r -d '' pf; do
-    rel="${pf#$FIRECHIP_PATCH_DIR/}"                       # e.g. generators/rocket-chip/src/main/scala/rocket/RocketCore.scala
-    target="$CHIPYARD_DIR/$rel"
-    if [ ! -f "$target" ]; then
-        echo "  Warning: target not found, skipping: $rel"
-        continue
+# Generator patches: patch/<name>-patch/... mirrors generators/<name>/... .
+#   firechip-patch: FireSim target configs. FVelaTargetConfigs.scala (FireSimFVelaSoCConfig, ...) and
+#                   RawTargetConfigs.scala (FireSimNoCustom*, stock targets for raw_config_build.sh) are
+#                   new files; TargetConfigs.scala overwrites the 1.13.x original.
+#   chipyard-patch: config/NoCustomFvelaTest.scala (stock NoCustomFvelaTest / NoCustomGemminiOnlyTest /
+#                   OnlyRocketCoreTest, used by the raw builds), a new file.
+#   New files are installed as is; existing ones are backed up once as <file>.bak and overwritten;
+#   files already identical are skipped. Overwrites are 1.13.x-specific, so this needs 1.13.x.
+apply_generator_patch() {
+    local name="$1" pdir="$CHIPYARD_DIR/generators/_f_vela/patch/$1-patch" gdir="$CHIPYARD_DIR/generators/$1"
+    local pf rel target
+    if [[ "$CY_VER" != 1.13.* ]]; then
+        echo "chipyard version '${CY_VER:-unknown}' is not 1.13.x -> skipping $name patch."
+        return
     fi
-    if [ ! -f "$target.bak" ]; then
-        cp "$target" "$target.bak"
-        echo "  Backed up original: $rel -> $rel.bak"
-    else
-        echo "  Backup already exists (keeping original): $rel.bak"
+    if [ ! -d "$pdir" ] || [ ! -d "$gdir" ]; then
+        echo "Warning: $pdir or $gdir not found. Skipping $name patch."
+        return
     fi
-    cp "$pf" "$target"
-    echo "  Patched: $rel"
-done < <(find "$FIRECHIP_PATCH_DIR" -type f -name '*.scala' -print0)
+    echo "chipyard $CY_VER: applying $name patch from generators/_f_vela/patch/$name-patch ..."
+    while IFS= read -r -d '' pf; do
+        rel="${pf#$pdir/}"                                 # e.g. chip/src/main/scala/TargetConfigs.scala
+        target="$gdir/$rel"
+        if [ ! -f "$target" ]; then
+            mkdir -p "$(dirname "$target")"
+            cp "$pf" "$target"
+            echo "  Added (new file): generators/$name/$rel"
+            continue
+        fi
+        if cmp -s "$pf" "$target"; then
+            echo "  Up to date: generators/$name/$rel"
+            continue
+        fi
+        if [ ! -f "$target.bak" ]; then
+            cp "$target" "$target.bak"
+            echo "  Backed up original: generators/$name/$rel -> generators/$name/$rel.bak"
+        else
+            echo "  Backup already exists (keeping original): generators/$name/$rel.bak"
+        fi
+        cp "$pf" "$target"
+        echo "  Patched: generators/$name/$rel"
+    done < <(find "$pdir" -type f -name '*.scala' -print0)
+}
+apply_generator_patch firechip
+apply_generator_patch chipyard
 
 # ----------------------------------------------------------------------------------------------------------------------
 # chipyard(verilator, firemarshal, firesim) sims folder linking (optional)

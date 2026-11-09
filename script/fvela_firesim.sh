@@ -496,6 +496,9 @@ while [[ $# -gt 0 ]]; do
     *) [[ -z "$TEST_BINARY" ]] || die "Only one binary may be specified"; TEST_BINARY="$1"; BINARY_GIVEN=1; shift ;;
   esac
 done
+# load_firesim cd's into sims/firesim, so a relative --binary would later resolve against the wrong
+# directory (readlink -f then fails and set -e ends the run silently right after infrasetup).
+[[ -z "$TEST_BINARY" ]] || TEST_BINARY="$(realpath -m -- "$TEST_BINARY")"
 
 case "$COMMAND" in
   run) run_cmd ;;

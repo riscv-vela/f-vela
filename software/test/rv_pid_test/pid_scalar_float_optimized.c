@@ -12,7 +12,7 @@ int start, end;
 
 int main() {
     volatile Actuator actuator4[8] = {
-        {1.0f, 2.0f, 2.9f, -1.0f, 5.0f, 6.0f, 7.0f, 0.0f},
+        {1.0f, 2.0f, 2.9f, -1.0f, 5.0f, 0.0f, 0.0f, 0.0f},
         // {11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 17.0f, 18.0f},
         // {21.0f, 22.0f, 23.0f, 24.0f, 25.0f, 26.0f, 27.0f, 28.0f},
         // {31.0f, 32.0f, 33.0f, 34.0f, 35.0f, 36.0f, 37.0f, 38.0f},
@@ -37,22 +37,25 @@ int main() {
     }
 
     __asm__ volatile ("csrr %0, cycle\n\t" : "=r"(end));
-    printf("Cycles: %d\n", end - start);
-
+    
     for (int i = 0; i < 1; i++) {
         printf("Actuator4[%d]:\n", i);
         printf("  Setpoint   : %.2f\n", actuator4[i].setpoint);
         printf("  Currpoint  : %.2f\n", actuator4[i].currpoint);
-        printf("  Output     : %.2f\n", actuator4[i].output);
-        printf("  Error Prev : %.2f\n", actuator4[i].error_prev);
+        printf("  Kp         : %.2f\n", actuator4[i].Kp);
+        printf("  Ki         : %.2f\n", actuator4[i].Ki);
+        printf("  Kd         : %.2f\n", actuator4[i].Kd);
         printf("  I Prev     : %.2f\n", actuator4[i].I_prev);
+        printf("  Error Prev : %.2f\n", actuator4[i].error_prev);
+        printf("  Output     : %.2f\n", actuator4[i].output);
         printf("{%.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f, %.2f}\n",
                actuator4[i].setpoint, actuator4[i].currpoint,
                actuator4[i].Kp, actuator4[i].Ki, actuator4[i].Kd,
                actuator4[i].I_prev, actuator4[i].error_prev, actuator4[i].output);
-        printf("---------------------------\n");
+        printf("---------------------------\n\n");
     }
 
+    printf("Cycles: %d\n", end - start);
     // @@@@@@@@@@@@@@@@@@@ actuator1 @@@@@@@@@@@@@@@@@@
     // __asm__ volatile (
     //     // Load dt into f8

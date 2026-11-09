@@ -14,10 +14,9 @@ import velaVPU.insns._
 // -----------------------------------------------------------------------------
 
 object RoPEUnitFactory extends FunctionalUnitFactory {
-  // woojin modify: val insns = Seq(VROPE) --> val insns = Seq(VROPE.VX.pipelined(4))로 변경 (RoPEUnit(depth=4)와 일치)
-  // 2단(64x64) LUT 분할로 파이프 1단 추가 (depth 4 -> 5): row-select 레지스터 컷을 넣어
-  // FireSim MidasTransforms(legacy SFC)의 ConstantPropagation이 4096-way 단일 mux tree를
-  // 순회하다 StackOverflowError 나던 문제를 회피한다.
+  // modify: val insns = Seq(VROPE) --> val insns = Seq(VROPE.VX.pipelined(4))로 변경 (RoPEUnit(depth=4)와 일치)
+  // depth 5: S0 입력 → S1 주소 → S2 LUT 동기 읽기(RoPELutRom) → S3 LUT 레지스터/cos·sin → S4 회전/WB.
+  // (예전 2단 VecInit LUT 때 늘린 단 수를 그대로 유지; LUT 구현은 아래 RoPELutRom 참고)
   val insns = Seq(VROPE.VX.pipelined(5)) // RoPEUnit(depth=5)와 일치: PipelinedExecution + PipelineStagesMinus1(4) 등록
   def generate(implicit p: Parameters): FunctionalUnit = new RoPEUnit
 }
@@ -99,61 +98,58 @@ class RoPEUnit(implicit p: Parameters)
 
   val lutDepth = 4096
   val lutCols  = 64   // q, r, i 각각 0..63 (addr = row*64 + i, row-major 주소 체계 가정)
-  // A는 FP16(half) 저장, B는 INT8 저장 (기존 코드 + import chisel3.util.experimental.loadMemoryFromFileInline)
-  // val lutA = SyncReadMem(lutDepth, UInt(32.W)) // {sinA, cosA}
-  // val lutB = SyncReadMem(lutDepth, UInt(16.W)) // {sinB, cosB}
-  // loadMemoryFromFileInline(lutA, "lutA.hex")
-  // loadMemoryFromFileInline(lutB, "lutB.hex")
 
-  // woojin modify (debugging용)
   // ---------------------------------------------------------------------------
-  // LUT를 elaboration(빌드) 시점에 hex에서 읽어 상수 ROM(VecInit)으로 굽는다.
-  // 이유: loadMemoryFromFileInline은 firtool(CIRCT)의 메모리 매크로 추출
-  //   (split_lutA_ext) 과정에서 $readmemh 초기화가 누락되어, Verilator가
-  //   RANDOMIZE_MEM_INIT로 초기화된 SRAM을 읽어 LUT 값이 전부 쓰레기가 됐음.
-  //   ROM으로 구우면 값이 넷리스트에 리터럴로 박혀 런타임 파일/매크로 의존이 사라진다.
+  // LUT = Verilog BlackBox ROM (RoPELutRom). 내용은 elaboration 시점에 RoPELutData.scala에서 읽어
+  // Verilog에 상수로 박는다 (런타임/합성 시 파일 의존 없음). 이력:
+  //   1) SyncReadMem + loadMemoryFromFileInline: firtool 메모리 매크로 추출에서 $readmemh가
+  //      빠져 Verilator에서 LUT가 쓰레기 값이 됨.
+  //   2) 4096-entry VecInit ROM: FireSim legacy SFC ConstantPropagation이 StackOverflow.
+  //   3) 2단(64x64) VecInit ROM: 시뮬은 맞지만, Vivado가 일부 열(s2_rowA_1,3,4,5,17..19)을
+  //      Block RAM ROM으로 바꾸면서 항상 0인 bit14/bit30(FP16 지수 MSB)을 1로 만들어
+  //      U280에서 해당 lane의 cos/sin이 ±1로 포화됨 (2026-11-02 확인).
+  // BlackBox는 FIRRTL 컴파일러(SFC/CIRCT)가 손대지 않고, 명시적 동기 ROM이라 Vivado가
+  // 그대로 BRAM으로 매핑한다. read latency는 이전과 같은 1 cycle (S1 주소 → S2 데이터).
   // A는 FP16(half) {sinA[31:16], cosA[15:0]}, B는 INT8 {sinB[15:8], cosB[7:0]}
   // ---------------------------------------------------------------------------
-  private def loadLutHex(fname: String, width: Int): Seq[UInt] = {
-    val candidates = Seq(
-      fname,
-      s"generators/_f_vela/software/test/rv_rope_test/$fname",
-      s"../../generators/_f_vela/software/test/rv_rope_test/$fname",
-      s"/home/woojin/_risc_vela/chipyard/generators/_f_vela/software/test/rv_rope_test/$fname"
-    )
-    val path = candidates.find(p => new java.io.File(p).exists).getOrElse(
-      throw new RuntimeException(
-        s"[RoPEUnit] LUT hex not found: $fname (tried: ${candidates.mkString(", ")})"))
-    val vals = scala.io.Source.fromFile(path).getLines()
-      .map(_.trim).filter(_.nonEmpty).map(s => BigInt(s, 16).U(width.W)).toSeq
-    require(vals.length == lutDepth,
-      s"[RoPEUnit] $path has ${vals.length} entries, expected $lutDepth")
+  // LUT 내용: RoPELutData.scala (software/test/rv_rope_test/make_lut.py가 생성, base = RoPELutData.base).
+  // .scala 파일이라 바뀌면 chipyard make가 다시 elaboration 함 (.hex만 바뀌면 make가 모르고 예전 LUT가 남음).
+  private def checkLut(name: String, vals: Seq[BigInt], width: Int): Seq[BigInt] = {
+    require(vals.length == lutDepth, s"[RoPEUnit] $name has ${vals.length} entries, expected $lutDepth")
+    require(vals.forall(v => v >= 0 && v.bitLength <= width), s"[RoPEUnit] $name has an entry wider than $width bits")
     vals
   }
 
-  // ---------------------------------------------------------------------------
-  // 2단(64x64) LUT: 예전엔 4096-entry flat Vec을 동적 인덱스 8번(rdA/rdB x 4) 읽었는데,
-  // FireSim MidasTransforms의 legacy SFC ConstantPropagation(regConstant$1)이 그 4096-way
-  // mux tree를 하나의 레지스터 fan-in으로 재귀 순회하다가 StackOverflowError를 냈다.
-  // row(64-way) select를 레지스터로 한 번 끊고 col(64-way) select를 다음 사이클에 하도록
-  // 나눠서 fan-in을 4096 -> 64+64로 줄인다. (S1: row select 준비 → S2: row 레지스터 →
-  // S3: row 안에서 col select = 실제 LUT 데이터 확정)
   // requires A_I_MAJOR=false, B_I_MAJOR=false (addr = row*64 + i, row-major)
-  // ---------------------------------------------------------------------------
   require(!A_I_MAJOR && !B_I_MAJOR,
-    "[RoPEUnit] 2-level LUT split assumes row-major addressing (addr = row*64 + i)")
-  val lutA_2d = VecInit(loadLutHex("lutA.hex", 32).grouped(lutCols).map(VecInit(_)).toSeq)
-  val lutB_2d = VecInit(loadLutHex("lutB.hex", 16).grouped(lutCols).map(VecInit(_)).toSeq)
-  // ---------------------------------------------------------------------------
+    "[RoPEUnit] LUT addressing assumes row-major (addr = row*64 + i)")
+  require(RoPELutData.headDim == 128, s"[RoPEUnit] LUT built for head size ${RoPELutData.headDim}, the unit needs 128")
+  private val lutAContents = checkLut("RoPELutData.lutA", RoPELutData.lutA, 32)
+  private val lutBContents = checkLut("RoPELutData.lutB", RoPELutData.lutB, 16)
+  println(s"[RoPEUnit] RoPE LUT base ${RoPELutData.base}")
 
   // ---------------------------------------------------------------------------
-  // S2 (신규): row select 레지스터 컷.
-  // q/r로 64개 row 중 하나만 골라 레지스터에 담아, S3에서 그 64개짜리 row 안에서만
-  // col(i) select 하도록 함 (SyncReadMem과 동일한 1-cycle read latency 유지).
+  // S1 -> S2: LUT 동기 읽기. lane 4개가 동시에 읽으므로 dual-port ROM 2벌씩 (lane 0/1, 2/3).
+  // 주소는 S1에서 확정 (A: q*64+i, B: r*64+i), en = v1 → 데이터는 S2에서 유효.
   // ---------------------------------------------------------------------------
-  val s2_rowA = RegEnable(lutA_2d(s1_q), VecInit(Seq.fill(lutCols)(0.U(32.W))), v1)
-  val s2_rowB = RegEnable(lutB_2d(s1_r), VecInit(Seq.fill(lutCols)(0.U(16.W))), v1)
-  val s2_i    = RegEnable(s1_i,          VecInit(Seq.fill(4)(0.U(6.W))),       v1)
+  val s2_lutA = Wire(Vec(4, UInt(32.W)))
+  val s2_lutB = Wire(Vec(4, UInt(16.W)))
+  for (p <- 0 until 2) {
+    val romA = Module(new RoPELutRom("RoPELutA_ROM", 32, lutAContents))
+    val romB = Module(new RoPELutRom("RoPELutB_ROM", 16, lutBContents))
+    for (rom <- Seq(romA, romB)) {
+      rom.io.clock := clock
+      rom.io.en    := v1
+    }
+    romA.io.addr0 := Cat(s1_q, s1_i(2*p))
+    romA.io.addr1 := Cat(s1_q, s1_i(2*p+1))
+    romB.io.addr0 := Cat(s1_r, s1_i(2*p))
+    romB.io.addr1 := Cat(s1_r, s1_i(2*p+1))
+    s2_lutA(2*p)   := romA.io.data0
+    s2_lutA(2*p+1) := romA.io.data1
+    s2_lutB(2*p)   := romB.io.data0
+    s2_lutB(2*p+1) := romB.io.data1
+  }
 
   // 파이프라인 레지스터 (v1 -> v2)
   val s2_x   = RegEnable(s1_x,   VecInit(Seq.fill(8)(0.S(16.W))), v1)
@@ -164,13 +160,13 @@ class RoPEUnit(implicit p: Parameters)
   val s2_idx = RegEnable(s1_idx, 0.U,                  v1)
 
   // ---------------------------------------------------------------------------
-  // S3: row 안에서 col(i) select → 실제 LUT 데이터 확정 (rdA/rdB) + 데이터 변환
+  // S3: LUT 데이터 레지스터 (rdA/rdB) + 데이터 변환. 파이프 깊이(5)는 이전과 동일.
   // ---------------------------------------------------------------------------
   val rdA = Wire(Vec(4, UInt(32.W)))
   val rdB = Wire(Vec(4, UInt(16.W)))
   for (k <- 0 until 4) {
-    rdA(k) := RegEnable(s2_rowA(s2_i(k)), v2)
-    rdB(k) := RegEnable(s2_rowB(s2_i(k)), v2)
+    rdA(k) := RegEnable(s2_lutA(k), v2)
+    rdB(k) := RegEnable(s2_lutB(k), v2)
   }
 
   // 파이프라인 레지스터 (v2 -> v3)
@@ -319,7 +315,7 @@ class RoPEUnit(implicit p: Parameters)
 
   io.write.valid     := v4
   io.write.bits.data := wbData
-  // Woojin modify: idx >> 3.U 대신 wvd_eg 사용 (wvd_eg는 vd의 element-group index를 나타냄)
+  // modify: idx >> 3.U 대신 wvd_eg 사용 (wvd_eg는 vd의 element-group index를 나타냄)
   io.write.bits.eg   := u4.wvd_eg       // 목적지 vd의 물리 element-group (idx가 아니라 wvd_eg 사용)
   io.write.bits.mask := Fill(128, 1.U)
 
@@ -345,4 +341,56 @@ class RoPEUnit(implicit p: Parameters)
     printf("[RoPE WB] valid=%d vd=%d eg=%d data=0x%x\n",
       io.write.valid, s4_vd, io.write.bits.eg, wbData)
   }
+}
+
+// -----------------------------------------------------------------------------
+// RoPELutRom: dual-port synchronous ROM as a Verilog BlackBox.
+//   data0/data1 <= rom[addr0/addr1] on the rising clock edge when en = 1 (1-cycle latency).
+// The contents are written into the Verilog as constants at elaboration time, so neither
+// Verilator nor Vivado needs the hex file. Being a BlackBox, the FIRRTL compilers (CIRCT for
+// Verilator, legacy SFC + Golden Gate for FireSim) pass it through untouched, and the
+// rom_style attribute plus the registered read lets Vivado map it straight to Block RAM.
+// -----------------------------------------------------------------------------
+class RoPELutRom(romName: String, width: Int, contents: Seq[BigInt]) extends BlackBox with HasBlackBoxInline {
+  private val depth     = contents.length
+  private val addrWidth = log2Ceil(depth)
+  require(depth == (1 << addrWidth), s"[RoPELutRom] depth $depth must be a power of 2")
+
+  val io = IO(new Bundle {
+    val clock = Input(Clock())
+    val en    = Input(Bool())
+    val addr0 = Input(UInt(addrWidth.W))
+    val addr1 = Input(UInt(addrWidth.W))
+    val data0 = Output(UInt(width.W))
+    val data1 = Output(UInt(width.W))
+  })
+  override def desiredName = romName
+
+  private val hexDigits = (width + 3) / 4
+  private val init = contents.zipWithIndex.map { case (v, i) =>
+    s"    rom[$i] = $width'h${v.toString(16).reverse.padTo(hexDigits, '0').reverse};"
+  }.mkString("\n")
+
+  setInline(s"$romName.v",
+    s"""// Generated by RoPELutRom (CustomRoPEUnit.scala) from RoPELutData.scala (rv_rope_test/make_lut.py). Do not edit.
+       |module $romName (
+       |  input                    clock,
+       |  input                    en,
+       |  input  [${addrWidth-1}:0]          addr0,
+       |  input  [${addrWidth-1}:0]          addr1,
+       |  output reg [${width-1}:0]      data0,
+       |  output reg [${width-1}:0]      data1
+       |);
+       |  (* rom_style = "block" *) reg [${width-1}:0] rom [0:${depth-1}];
+       |  initial begin
+       |$init
+       |  end
+       |  always @(posedge clock) begin
+       |    if (en) begin
+       |      data0 <= rom[addr0];
+       |      data1 <= rom[addr1];
+       |    end
+       |  end
+       |endmodule
+       |""".stripMargin)
 }

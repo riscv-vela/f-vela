@@ -21,7 +21,7 @@ int main(void)
      * t5 : m
      * t6 : idx 및 config 생성
      */
-    printf("[1] Starting RoPE Test\n");
+    // printf("[1] Starting RoPE Test\n");
 
     asm volatile(
         "li t0, 0x1E00\n"
@@ -31,7 +31,7 @@ int main(void)
         : "t0", "memory"
     );
 
-    printf("[2] mstatus configured\n");
+    // printf("[2] mstatus configured\n");
 
     asm volatile(
         "li t0, 8\n"
@@ -41,7 +41,7 @@ int main(void)
         : "t0", "memory"
     );
 
-    printf("[3] vsetvli passed\n");
+    // printf("[3] vsetvli passed\n");
 
     asm volatile(
         "vle16.v v2, (%0)\n"
@@ -50,7 +50,7 @@ int main(void)
         : "memory"
     );
 
-    printf("[4] vector load passed\n");
+    // printf("[4] vector load passed\n");
 
     asm volatile(
         "mv      t4, gp\n"
@@ -65,7 +65,7 @@ int main(void)
         : "t4", "t5", "t6", "memory"
     );
 
-    printf("[5] custom instruction passed\n");
+    // printf("[5] custom instruction passed\n");
 
     asm volatile(
         "vse16.v v3, (%0)\n"
@@ -74,7 +74,7 @@ int main(void)
         : "memory"
     );
 
-printf("[6] vector store passed\n");
+    // printf("[6] vector store passed\n");
 
     printf("Input Data:\n");
 

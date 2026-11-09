@@ -1,8 +1,18 @@
-// See LICENSE for license details.
+// gemm.c — plain int8 GEMM on Gemmini (tiled_matmul_auto, WS), checked against the CPU.
+//
+//   C[i][j] = sat8( A[i][:] . B[:][j] + D[i][j] )      (scale 1, no activation)
+//
+// This is the ordinary int8 path (is_mpgemm = 0). The 2-bit ternary weight path
+// (BitNet) is tested separately in ternary_gemm.c (correctness) and ternary_gemm_perf.c (performance).
+//
+// Cases: GEMV (I=1), one tile, multi-tile, odd sizes (hardware padding),
+//        full bias D, repeating bias (every row adds D[0][:]).
+// Value ranges keep most outputs inside int8 so a wrong sum is not hidden by
+// saturation, while some outputs still saturate.
 
 #include <stdint.h>
 #include <stddef.h>
-#include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 #ifndef BAREMETAL
@@ -10,116 +20,69 @@
 #endif
 #include "gemmini_testutils.h"
 
-#define PRINT 1
+#define MAXM 64   // all matrices are MAXM x MAXM buffers; every stride is MAXM
 
-#define ACTIVATION NO_ACTIVATION
+static uint32_t rng = 0x1234ABCDu;
+static inline uint32_t rnd(void) { rng = rng * 1664525u + 1013904223u; return rng; }
+static inline int rr(int lo, int hi) { return lo + (int)((rnd() >> 8) % (uint32_t)(hi - lo + 1)); }
 
-#define NO_BIAS 1
-#define REPEATING_BIAS 1
+static elem_t A[MAXM][MAXM] row_align(1);
+static elem_t B[MAXM][MAXM] row_align(1);
+static elem_t C[MAXM][MAXM] row_align(1);
+static acc_t  D[MAXM][MAXM] row_align_acc(1);
 
-#define A_TRANSPOSE 0
-#define B_TRANSPOSE 0
+static int total_err = 0, total_runs = 0, total_fail = 0;
 
-#define MAT_DIM_I 1
-#define MAT_DIM_K 64
-#define MAT_DIM_J 64
+static void run(const char *name, int I, int J, int K, bool bias, bool repeating_bias) {
+  for (int i = 0; i < MAXM; i++)
+    for (int j = 0; j < MAXM; j++) { A[i][j] = B[i][j] = C[i][j] = 0; D[i][j] = 0; }
+  for (int i = 0; i < I; i++) for (int k = 0; k < K; k++) A[i][k] = (elem_t)rr(-8, 7);
+  for (int k = 0; k < K; k++) for (int j = 0; j < J; j++) B[k][j] = (elem_t)rr(-3, 3);
+  if (bias) for (int i = 0; i < I; i++) for (int j = 0; j < J; j++) D[i][j] = rr(-64, 64);
 
-#define A_STRIDE MAT_DIM_K //The number of A's column
-#define B_STRIDE MAT_DIM_J //The number of B's column
-#define D_STRIDE MAT_DIM_J //The number of D's column
-#define C_STRIDE MAT_DIM_J //The number of C's column
+  const uint64_t start = read_cycles();
+  tiled_matmul_auto(I, J, K, &A[0][0], &B[0][0], bias ? &D[0][0] : NULL, &C[0][0],
+      MAXM, MAXM, MAXM, MAXM,
+      MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY,
+      NO_ACTIVATION, ACC_SCALE_IDENTITY, 0, repeating_bias,
+      false, false,        // transpose_A, transpose_B
+      false, false,        // full_C, low_D
+      0, WS);
+  gemmini_fence();
+  const uint64_t cycles = read_cycles() - start;
 
-void full_printMatrix(elem_t m[MAT_DIM_I][MAT_DIM_J]) {
-  for (size_t i = 0; i < MAT_DIM_I; ++i) {
-    for (size_t j = 0; j < MAT_DIM_J; ++j)
-      printf("%d ", m[i][j]);
-    printf("\n");
-  }
-}
-
-static void init_mats(elem_t A[MAT_DIM_I][MAT_DIM_K], elem_t B[MAT_DIM_K][MAT_DIM_J], acc_t D[MAT_DIM_I][MAT_DIM_J]) {
-
-  for (size_t i = 0; i < MAT_DIM_I; ++i)
-    for (size_t k = 0; k < MAT_DIM_K; ++k)
-        A[i][k] = rand() % 2; // 0 또는 1
-
-  for (size_t k = 0; k < MAT_DIM_K; ++k) {
-    for (size_t j = 0; j < MAT_DIM_J; ++j) {
-      B[k][j] = rand() % 3 - 1;
+  int err = 0;
+  for (int i = 0; i < I; i++) for (int j = 0; j < J; j++) {
+    acc_t acc = bias ? D[repeating_bias ? 0 : i][j] : 0;
+    for (int k = 0; k < K; k++) acc += (acc_t)A[i][k] * (acc_t)B[k][j];
+    const elem_t ref = acc > elem_t_max ? elem_t_max : (acc < elem_t_min ? elem_t_min : (elem_t)acc);
+    if (C[i][j] != ref) {
+      if (err < 4) printf("    [%d][%d] got=%d ref=%d\n", i, j, (int)C[i][j], (int)ref);
+      err++;
     }
   }
 
-  for (size_t i = 0; i < MAT_DIM_I; ++i)
-    for (size_t j = 0; j < MAT_DIM_J; ++j)
-        D[i][j] = NO_BIAS ? 0 : rand(); // 0 또는 1
-
+  total_err += err; total_runs++; if (err) total_fail++;
+  printf("[%s] %-8s I=%2d J=%2d K=%2d bias=%d rep=%d : %d mismatches, %lu cycles\n",
+         err ? "FAIL" : "PASS", name, I, J, K, bias, repeating_bias, err,
+         (unsigned long)cycles);
 }
 
-
-int main() {
+int main(void) {
 #ifndef BAREMETAL
-    if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) {
-      perror("mlockall failed");
-      exit(1);
-    }
+  if (mlockall(MCL_CURRENT | MCL_FUTURE) != 0) { perror("mlockall"); exit(1); }
 #endif
+  printf("=== int8 gemm (tiled_matmul_auto, WS, DIM=%d) ===\n", DIM);
+  gemmini_flush(0);
 
-    gemmini_flush(0);
+  run("gemv",    1, 64, 64, false, false);
+  run("d16",    16, 16, 16, false, false);
+  run("d64",    64, 64, 64, false, false);
+  run("odd",    37, 50, 29, false, false);
+  run("bias",   32, 32, 32, true,  false);
+  run("repbias",32, 48, 32, true,  true);
 
-    static elem_t full_A[MAT_DIM_I][MAT_DIM_K] row_align(1);
-    static elem_t full_B[MAT_DIM_K][MAT_DIM_J] row_align(1);
-    static elem_t full_C[MAT_DIM_I][MAT_DIM_J] row_align(1);
-    static acc_t full_D[MAT_DIM_I][MAT_DIM_J] row_align_acc(1);
-
-    init_mats(full_A, full_B, full_D);
-
-    counter_configure(0, RDMA_BYTES_REC);
-    counter_configure(1, WDMA_BYTES_SENT);
-    counter_reset();
-
-    printf("Starting gemmini matmul\n");
-    printf("I: %d, J: %d, K: %d\n", MAT_DIM_I, MAT_DIM_J, MAT_DIM_K);
-    printf("NO_BIAS: %d, REPEATING_BIAS: %d\n", NO_BIAS, REPEATING_BIAS);
-    printf("A_TRANSPOSE: %d, B_TRANSPOSE: %d\n", A_TRANSPOSE, B_TRANSPOSE);
-    uint64_t start = read_cycles();
-
-    tiled_matmul_auto(MAT_DIM_I, MAT_DIM_J, MAT_DIM_K,
-            (elem_t*)full_A, (elem_t*)full_B, NO_BIAS ? NULL : &full_D[0][0], full_C,
-            A_STRIDE, B_STRIDE, D_STRIDE, C_STRIDE,
-            MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY, MVIN_SCALE_IDENTITY,
-            ACTIVATION, 1.0, 0, REPEATING_BIAS,
-            false, B_TRANSPOSE,
-            false, false, 0, WS);                   // full_C, low_D
-
-    gemmini_fence();
-
-    uint64_t end = read_cycles();
-    printf("Cycles taken: %lu\n", end-start);
-
-    const uint64_t total_macs = MAT_DIM_I * MAT_DIM_J * MAT_DIM_K;
-    const uint64_t ideal_cycles = total_macs / (DIM * DIM);
-    const uint64_t utilization = 100 * ideal_cycles / (end-start);
-    printf("Total macs: %lu\n", total_macs);
-    printf("Ideal cycles: %lu\n", ideal_cycles);
-    printf("Utilization: %lu%%\n", utilization);
-
-    printf("RDMA_BYTES_REC: %u\n", counter_read(0));
-    printf("WDMA_BYTES_SENT: %u\n", counter_read(1));
-    
-#ifdef PRINT
-    printf("\n");		
-    printf("C:\n");
-    full_printMatrix(full_C);
-		printf("\n");
-		printf("A:\n");
-		full_printMatrix(full_A);
-		printf("\n");
-		printf("B:\n");
-		full_printMatrix(full_B);
-
-#endif
-
-
-  exit(0);
+  printf("=== int8 gemm: %d/%d PASS, %d mismatches ===\n",
+         total_runs - total_fail, total_runs, total_err);
+  exit(total_err == 0 ? 0 : 1);
 }
-

@@ -35,7 +35,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
-#include "pf_gemmini.h"
+#include "gemmini.h"
 
 #ifndef BAREMETAL
 #include <sys/mman.h>

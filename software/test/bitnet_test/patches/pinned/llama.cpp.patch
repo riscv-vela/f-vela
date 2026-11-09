@@ -1,0 +1,84 @@
+diff --git a/ggml/src/CMakeLists.txt b/ggml/src/CMakeLists.txt
+index 500dfbd4..6ab7359a 100644
+--- a/ggml/src/CMakeLists.txt
++++ b/ggml/src/CMakeLists.txt
+@@ -1380,3 +1380,19 @@ if (BUILD_SHARED_LIBS)
+     set_target_properties(ggml PROPERTIES POSITION_INDEPENDENT_CODE ON)
+     target_compile_definitions(ggml PRIVATE GGML_SHARED GGML_BUILD)
+ endif()
++
++# velaNPU offload (software/test/bitnet_test/vela): -DGGML_VELA=ON -DGGML_VELA_DIR=<dir with ggml-vela.c>
++#   GGML_VELA_EMULATE=ON  -> host build, Gemmini calls are emulated in C (checks layouts on x86)
++#   GGML_VELA_GEMMINI_INC -> directory with gemmini.h / gemmini_fp16.h (RISC-V build)
++option(GGML_VELA         "ggml: offload matmuls to velaNPU (Gemmini)" OFF)
++option(GGML_VELA_EMULATE "ggml: emulate velaNPU in software"          OFF)
++if (GGML_VELA)
++    target_sources(ggml PRIVATE ${GGML_VELA_DIR}/ggml-vela.c ${GGML_VELA_DIR}/vela_npu.c ${GGML_VELA_DIR}/vela_rope.c)
++    target_include_directories(ggml PUBLIC ${GGML_VELA_DIR})
++    target_compile_definitions(ggml PUBLIC GGML_USE_VELA)
++    if (GGML_VELA_EMULATE)
++        target_compile_definitions(ggml PRIVATE VELA_EMULATE)
++    else()
++        target_include_directories(ggml PRIVATE ${GGML_VELA_GEMMINI_INC})
++    endif()
++endif()
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index 1241b244..e99e8a2b 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -49,6 +49,9 @@
+ #if defined(GGML_BITNET_ARM_TL1) || defined(GGML_BITNET_X86_TL2)
+ #include "ggml-bitnet.h"
+ #endif
++#if defined(GGML_USE_VELA)
++#include "ggml-vela.h"   // velaNPU (Gemmini) offload, software/test/bitnet_test/vela
++#endif
+ 
+ #if defined(_MSC_VER)
+ // disable "possible loss of data" to avoid hundreds of casts
+@@ -12617,6 +12620,14 @@ static void ggml_compute_forward_mul_mat(
+     GGML_ASSERT(nb1 <= nb2);
+     GGML_ASSERT(nb2 <= nb3);
+ 
++#if defined(GGML_USE_VELA)
++    // velaNPU: I2_S (ternary) and F16 matmuls can run on Gemmini, depending on VELA_MODE.
++    // Thread 0 drives the NPU; other threads return at once and wait at the node barrier.
++    if (ggml_vela_mul_mat(src0, src1, dst, ith, nth)) {
++        return;
++    }
++#endif
++
+ // #ifndef GGML_BITNET_X86_TL2
+ //     if (src1->ne[1] <= 1 && src0->type != GGML_TYPE_TL1 && src0->type != GGML_TYPE_I2_S && src0->type != GGML_TYPE_TQ1_0 && src0->type != GGML_TYPE_TQ2_0 && src0->ne[1] != 32002 && src0->ne[1] != 96 && src0->ne[0] != 96) {
+ //         int32_t* int_C = (int32_t*)malloc(1 * src0->ne[1] * sizeof(int32_t));
+@@ -17939,7 +17950,13 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
+             } break;
+         case GGML_OP_MUL_MAT:
+             {
++#if defined(GGML_USE_VELA)
++                const uint64_t vela_t0 = ggml_vela_now();
+                 ggml_compute_forward_mul_mat(params, tensor);
++                ggml_vela_account(tensor, params->ith, vela_t0);
++#else
++                ggml_compute_forward_mul_mat(params, tensor);
++#endif
+             } break;
+         case GGML_OP_MUL_MAT_ID:
+             {
+@@ -18011,7 +18028,16 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
+             } break;
+         case GGML_OP_ROPE:
+             {
++#if defined(GGML_USE_VELA)
++                // velaVPU: RoPE on the RoPE unit (vfrope) with VELA_ROPE=on
++                const uint64_t vela_t0 = ggml_vela_now();
++                if (!ggml_vela_rope(tensor, params->ith, params->nth)) {
++                    ggml_compute_forward_rope(params, tensor);
++                }
++                ggml_vela_account(tensor, params->ith, vela_t0);
++#else
+                 ggml_compute_forward_rope(params, tensor);
++#endif
+             } break;
+         case GGML_OP_ROPE_BACK:
+             {

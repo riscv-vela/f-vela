@@ -11,7 +11,7 @@
 #   software/ncnn/build               host build
 
 CHIPYARD   ?= /home/esca/_f_vela/chipyard
-NCNN_DIR   ?= $(CHIPYARD)/software/ncnn
+NCNN_DIR   ?= $(CHIPYARD)/software/third_party/ncnn
 RISCV      ?= $(CHIPYARD)/.conda-env/riscv-tools
 RISCV_LLVM_ROOT ?= /home/esca/_f_vela/toolchains/riscv64-llvm
 
@@ -38,35 +38,62 @@ all: $(BUILD)/linux/ncnn_infer_rvv.linux $(BUILD)/linux/ncnn_infer_scalar.linux 
 # scalar ncnn (the RVV path is affected by the page-crossing vector bug on the current bitstream).
 #   cpu_*      NPU backend off (runs on either bitstream)
 #   npu_*      velaNPU (custom Gemmini, pf_gemmini.h + profiler)  -> FireSimFVelaSoCConfig (fvela_u280)
-#   npu_<m>2   velaNPU, profiler off, cycles from the Gemmini perf counters (same method as gemmini_*)
-#              -> FireSimFVelaSoCConfig (fvela_u280)   e.g. npu_lenet2, npu_vgg16_2, npu_resnet18_2
+#              --profiler counter at run time: profiler off, cycles from the Gemmini perf counters
+#              (same method as gemmini_*)
 #   gemmini_*  upstream Gemmini (gemmini-rocc-tests gemmini.h + perf counters)
 #                                                                  -> FireSimNoCustomGemminiOnlyTest (nocustom_gemmini_only_u280)
 TEST_MODELS := lenet vgg16 resnet18
 model_id = $(if $(filter lenet,$(1)),0,$(if $(filter vgg16,$(1)),1,2))
-# executable name of backend $(1), model $(2): npuctr -> npu_<m>2 (npu_<m>_2 if <m> ends in a digit)
-test_name = $(if $(filter npuctr,$(1)),npu_$(2)$(if $(filter %0 %1 %2 %3 %4 %5 %6 %7 %8 %9,$(2)),_2,2),$(1)_$(2))
-TEST_BINS   := $(foreach b,cpu npu npuctr gemmini,$(foreach m,$(TEST_MODELS),$(BUILD)/linux/$(call test_name,$(b),$(m)).riscv))
-NPU2_TEST_BINS := $(foreach m,$(TEST_MODELS),$(BUILD)/linux/$(call test_name,npuctr,$(m)).riscv)
+TEST_BINS   := $(foreach b,cpu npu gemmini,$(foreach m,$(TEST_MODELS),$(BUILD)/linux/$(b)_$(m).riscv))
 GEMMINI_TEST_BINS := $(foreach m,$(TEST_MODELS),$(BUILD)/linux/gemmini_$(m).riscv)
 # backend -> HAL object / extra defines
-test_hal  = $(BUILD)/obj/$(if $(filter gemmini,$(1)),gemmini_stock_hal,$(if $(filter npuctr,$(1)),vela_npu_hal_ctr,vela_npu_hal)).gcc.o
-test_defs = -DTEST_BACKEND_NPU=$(if $(filter cpu,$(1)),0,1) -DTEST_NPU_STOCK_GEMMINI=$(if $(filter gemmini,$(1)),1,0) \
-            -DTEST_NPU_CYCLE_COUNTER=$(if $(filter npuctr,$(1)),1,0)
+test_hal  = $(BUILD)/obj/$(if $(filter gemmini,$(1)),gemmini_stock_hal,vela_npu_hal).gcc.o
+test_defs = -DTEST_BACKEND_NPU=$(if $(filter cpu,$(1)),0,1) -DTEST_NPU_STOCK_GEMMINI=$(if $(filter gemmini,$(1)),1,0)
 HOST_TEST_BINS := $(foreach b,cpu npu,$(foreach m,$(TEST_MODELS),$(BUILD)/host/$(b)_$(m)))
 TEST_SRC    := src/ncnn_conv_test.cpp
 
+# ---- fp convolution executables: npu_<m>_fp.riscv / cpu_<m>_fp.riscv -----------------------------
+#   npu_<m>_fp  velaNPU fp16 (FpExeUnit: fp16 multiply, fp32 accumulate) -> support_fp bitstream (fvela_u280)
+#               CPU im2col + tiled_matmul_auto_fp (gemmini_fp16.h), HAL built with -DVNPU_FP=1
+#   cpu_<m>_fp  Rocket core fp32 (ncnn Convolution), the CPU baseline for npu_<m>_fp
+# Only LeNet by default: im2col copies of VGG16/ResNet18 activations are large
+# (make fp-testbins FP_MODELS="lenet resnet18" to add more).
+FP_MODELS ?= lenet
+FP_TEST_BINS := $(foreach b,cpu npu,$(foreach m,$(FP_MODELS),$(BUILD)/linux/$(b)_$(m)_fp.riscv))
+HOST_FP_TEST_BINS := $(foreach b,cpu npu,$(foreach m,$(FP_MODELS),$(BUILD)/host/$(b)_$(m)_fp))
+
 testbins: $(TEST_BINS)
+fp-testbins: $(FP_TEST_BINS)
+host-fp-testbins: $(HOST_FP_TEST_BINS)
 gemmini-testbins: $(GEMMINI_TEST_BINS)
-npu2-testbins: $(NPU2_TEST_BINS)
 host-testbins: $(HOST_TEST_BINS)
 
 define test_bin_rules
-$(BUILD)/linux/$(call test_name,$(1),$(2)).riscv: $(TEST_SRC) $(LAYER_SRC) $(LAYER_HDR) $(call test_hal,$(1)) $(SCALAR_NCNN)/lib/libncnn.a
+$(BUILD)/linux/$(1)_$(2).riscv: $(TEST_SRC) $(LAYER_SRC) $(LAYER_HDR) $(call test_hal,$(1)) $(SCALAR_NCNN)/lib/libncnn.a
 	@mkdir -p $$(dir $$@)
 	$(SCALAR_CXX) $(RISCV_CXXFLAGS) -DVELA_NPU=1 -DTEST_MODEL_ID=$(call model_id,$(2)) $(call test_defs,$(1)) \
 		-Isrc -I$(SCALAR_NCNN)/include/ncnn $(TEST_SRC) $(LAYER_SRC) $(call test_hal,$(1)) \
 		-o $$@ $(SCALAR_NCNN)/lib/libncnn.a $(RISCV_LDFLAGS)
+endef
+
+# fp: $(1) = cpu | npu, $(2) = model
+define fp_test_bin_rules
+$(BUILD)/linux/$(1)_$(2)_fp.riscv: $(TEST_SRC) $(LAYER_SRC) $(LAYER_HDR) $(BUILD)/obj/vela_npu_hal_fp.gcc.o $(SCALAR_NCNN)/lib/libncnn.a
+	@mkdir -p $$(dir $$@)
+	$(SCALAR_CXX) $(RISCV_CXXFLAGS) -DVELA_NPU=1 -DVELA_NPU_FP=1 -DTEST_CONV_FP=1 -DTEST_MODEL_ID=$(call model_id,$(2)) \
+		-DTEST_BACKEND_NPU=$(if $(filter npu,$(1)),1,0) \
+		-Isrc -I$(SCALAR_NCNN)/include/ncnn $(TEST_SRC) $(LAYER_SRC) $(BUILD)/obj/vela_npu_hal_fp.gcc.o \
+		-o $$@ $(SCALAR_NCNN)/lib/libncnn.a $(RISCV_LDFLAGS)
+endef
+
+# host: npu_<m>_fp runs the fp16 software model of the FpExeUnit (no NPU cycles)
+define host_fp_test_bin_rules
+$(BUILD)/host/$(1)_$(2)_fp: $(TEST_SRC) $(LAYER_SRC) $(LAYER_HDR) $(HOST_NCNN)/src/libncnn.a
+	@mkdir -p $$(dir $$@)
+	$(HOST_CXX) $(CXXFLAGS_COMMON) -DTEST_CONV_FP=1 -DTEST_MODEL_ID=$(call model_id,$(2)) -DTEST_BACKEND_NPU=$(if $(filter npu,$(1)),1,0) \
+		-Isrc -I$(NCNN_DIR)/src -I$(HOST_NCNN)/src $(TEST_SRC) $(LAYER_SRC) -o $$@ $(HOST_NCNN)/src/libncnn.a \
+		-Wl,--start-group $(wildcard $(HOST_NCNN)/glslang/*/*.a $(HOST_NCNN)/glslang/*/*/*/*.a) -Wl,--end-group \
+		-fopenmp -lpthread -ldl
 endef
 
 # host build: CPU path, and the NPU path through the int8 software model (no NPU cycles)
@@ -169,9 +196,11 @@ $(BUILD)/obj/vela_npu_hal.gcc.o: src/vela_npu_hal.c src/vela_npu_hal.h src/gemmi
 	@mkdir -p $(dir $@)
 	$(RISCV)/bin/riscv64-unknown-linux-gnu-gcc $(NPU_CFLAGS) -Wno-incompatible-pointer-types -c $< -o $@
 
-$(BUILD)/obj/vela_npu_hal_ctr.gcc.o: src/vela_npu_hal.c src/vela_npu_hal.h src/gemmini_perf_counters.h
+# fp16 HAL: include/gemmini.h (is_fp mode) + gemmini_fp16.h instead of pf_gemmini.h
+$(BUILD)/obj/vela_npu_hal_fp.gcc.o: src/vela_npu_hal.c src/vela_npu_hal.h src/gemmini_perf_counters.h \
+		$(FVELA_SW)/include/gemmini.h $(FVELA_SW)/include/gemmini_fp16.h
 	@mkdir -p $(dir $@)
-	$(RISCV)/bin/riscv64-unknown-linux-gnu-gcc $(NPU_CFLAGS) -DVNPU_COUNTER_ONLY=1 -Wno-incompatible-pointer-types -c $< -o $@
+	$(RISCV)/bin/riscv64-unknown-linux-gnu-gcc $(NPU_CFLAGS) -DVNPU_FP=1 -Wno-incompatible-pointer-types -c $< -o $@
 
 # Upstream Gemmini driver: only gemmini-rocc-tests (its gemmini.h / gemmini_params.h, regenerated
 # when the stock Gemmini is elaborated), nothing from software/include.
@@ -214,8 +243,10 @@ models:
 clean:
 	rm -rf $(BUILD)
 
-.PHONY: all host models calib baremetal testbins gemmini-testbins npu2-testbins host-testbins clean
+.PHONY: all host models calib baremetal testbins fp-testbins host-fp-testbins gemmini-testbins host-testbins clean
 
 # generated here, after every variable the rules use is defined
-$(foreach b,cpu npu npuctr gemmini,$(foreach m,$(TEST_MODELS),$(eval $(call test_bin_rules,$(b),$(m)))))
+$(foreach b,cpu npu gemmini,$(foreach m,$(TEST_MODELS),$(eval $(call test_bin_rules,$(b),$(m)))))
 $(foreach b,cpu npu,$(foreach m,$(TEST_MODELS),$(eval $(call host_test_bin_rules,$(b),$(m)))))
+$(foreach b,cpu npu,$(foreach m,$(TEST_MODELS),$(eval $(call fp_test_bin_rules,$(b),$(m)))))
+$(foreach b,cpu npu,$(foreach m,$(TEST_MODELS),$(eval $(call host_fp_test_bin_rules,$(b),$(m)))))

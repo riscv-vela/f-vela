@@ -32,7 +32,8 @@ typedef struct
 int vnpu_peak_macs_per_cycle(void);
 
 // One-time setup: flush the accelerator TLB and register a profile buffer of `buffer_mb` MiB.
-// Returns 0 on success.
+// buffer_mb == 0: no hardware profiler; span_cycles / busy_cycles then come from the Gemmini perf
+// counters (ld|ex|st controller busy), the same method as gemmini_stock_hal.c. Returns 0 on success.
 int vnpu_init(size_t buffer_mb);
 
 // int8 convolution on the NPU (tiled_conv_auto, weight-stationary), batch 1, square kernel/stride,
@@ -44,6 +45,18 @@ void vnpu_conv_int8(int in_h, int in_w, int in_c, int out_c, int out_h, int out_
                     int stride, int padding, int kernel,
                     const int8_t* input, const int8_t* weights, const int32_t* bias, int8_t* output,
                     int relu, float scale, vnpu_profile_t* prof);
+
+// fp16 matmul on the NPU's FpExeUnit (gemmini_fp16.h tiled_matmul_auto_fp, WS): fp16 multiply,
+// fp32 accumulate. Only in the HAL built with -DVNPU_FP=1 (needs a support_fp bitstream).
+//   C[M][N] = D[M][N] + A[M][K] @ B[K][N]
+//   A, B: IEEE half bit patterns, row strides lda / ldb in elements
+//   D: fp32 bias (may be NULL), row stride ldd; ldd == 0 = one row [N] repeated for every row
+//      (Gemmini repeating_bias: the NPU loads N floats instead of an M x N matrix)
+//   C: fp32 (row stride ldc)
+// Waits for completion (gemmini_fence) and fills *prof like vnpu_conv_int8.
+void vnpu_matmul_fp16(int M, int N, int K,
+                      const uint16_t* A, int lda, const uint16_t* B, int ldb,
+                      const float* D, int ldd, float* C, int ldc, vnpu_profile_t* prof);
 
 #ifdef __cplusplus
 }

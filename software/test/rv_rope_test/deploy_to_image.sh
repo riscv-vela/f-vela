@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Linux PID tests and install them into the rootfs of the FireSim workload "rv_rope_test"
+# Build the Linux RoPE tests and install them into the rootfs of the FireSim workload "rv_rope_test"
 # (sims/firesim/deploy/workloads/rv_rope_test.json).
 #
 # The files that go into the rootfs are managed in generators/_f_vela/rootfs/rv_rope_test/overlay/
@@ -16,7 +16,7 @@
 #   --size      grow the image to this size (default: keep the base image size)
 #   --clean     recreate the image from br-base first
 # then:  ../../../script/fvela_firesim.sh run --workload rv_rope_test --attach
-#        on target: cd /media && ./vfrope_4f_linux.linux
+#        on target: cd /media && ./vfrope_test2_linux.linux
 set -Eeuo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

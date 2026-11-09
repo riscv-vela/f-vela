@@ -7,7 +7,7 @@ x_data_hex = [
 ]
 
 D_MODEL = 128
-BASE = 10000.0
+BASE = 500000.0   # = make_lut.py BASE (RoPE unit LUT); was 10000.0 until 2026-11
 
 # RoPE position
 m = 65

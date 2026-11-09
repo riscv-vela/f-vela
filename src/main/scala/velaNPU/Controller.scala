@@ -439,7 +439,7 @@ class GemminiModule[T <: Data: Arithmetic, U <: Data, V <: Data]
       unrolled_cmd.ready := true.B
     }
 
-    .elsewhen (is_profiler_paddr){ // fixed by woojin
+    .elsewhen (is_profiler_paddr){ // fixed
       // Using loop_cmd here left unrolled_cmd.ready deasserted, so the SET_PROFILER_PADDR command was never dequeued
       // -> io.busy stuck high -> pipeline stall
       profiler.module.io.profiler_vaddr_valid := unrolled_cmd.valid

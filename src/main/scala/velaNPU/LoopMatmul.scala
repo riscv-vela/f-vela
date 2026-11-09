@@ -1150,7 +1150,11 @@ class LoopMatmul(block_size: Int, coreMaxAddrBits: Int, reservation_station_size
 
   val loop_requesting_ldD_id = Mux(head_loop.ldd_started, tail_loop_id, head_loop_id)
   val loop_requesting_ldD = loops(loop_requesting_ldD_id)
-  ldD.io.req.bits.max_j := loop_requesting_ldD.max_j
+  // mpgemm: max_j counts packed weight blocks (4 int2 weights per byte), but D, like C,
+  // has 4x as many columns in the accumulator (execute uses c_addr_mpgemm = (i*max_j+j)*block_size*4).
+  // Scale it the same way stC does; without this, D only filled the first 1/4 of the
+  // columns and the next row-block's bias landed in this row-block's columns.
+  ldD.io.req.bits.max_j := Mux(loop_requesting_ldD.is_mpgemm, loop_requesting_ldD.max_j * 4.U, loop_requesting_ldD.max_j)
   ldD.io.req.bits.max_i := loop_requesting_ldD.max_i
   ldD.io.req.bits.pad_j := loop_requesting_ldD.pad_j
   ldD.io.req.bits.pad_i := loop_requesting_ldD.pad_i

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the Linux PID tests and install them into the rootfs of the FireSim workload "profiler_test"
+# Build the Linux profiler tests and install them into the rootfs of the FireSim workload "profiler_test"
 # (sims/firesim/deploy/workloads/profiler_test.json).
 #
 # The files that go into the rootfs are managed in generators/_f_vela/rootfs/profiler_test/overlay/

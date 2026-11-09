@@ -7,8 +7,9 @@
 #
 #   /media/cpu_lenet.riscv  /media/cpu_vgg16.riscv  /media/cpu_resnet18.riscv   NPU backend disabled
 #   /media/npu_lenet.riscv  /media/npu_vgg16.riscv  /media/npu_resnet18.riscv   NPU backend enabled
-#   /media/npu_lenet2.riscv npu_vgg16_2.riscv npu_resnet18_2.riscv
-#                         velaNPU, cycles from the Gemmini perf counters (same method as gemmini_*)
+#                         npu_*: --profiler counter = cycles from the Gemmini perf counters (same method as gemmini_*)
+#   /media/npu_lenet_fp.riscv /media/cpu_lenet_fp.riscv
+#                         velaNPU fp16 (FpExeUnit) / CPU fp32 baseline (make fp-testbins)
 #   /media/gemmini_lenet.riscv /media/gemmini_vgg16.riscv /media/gemmini_resnet18.riscv
 #                         NPU backend on the upstream Gemmini (boot with --hw-config nocustom_gemmini_only_u280)
 #   /media/ncnn_infer_scalar.linux /media/ncnn_infer_rvv.linux /media/rvv_ptr_test.linux  (debug tools)
