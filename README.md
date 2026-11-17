@@ -255,7 +255,6 @@ cd script
 ./fvela_firesim.sh status
 ./fvela_firesim.sh stop
 ```
-In Buildroot, log in as `root`; test files are in `/media`.
 
 `--skip-infrasetup` keeps the programmed FPGA (same bitstream) and only refreshes the staged image /
 bare-metal program, so the next run starts faster. The workload must have had one full run before.
